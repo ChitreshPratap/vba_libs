@@ -7,7 +7,7 @@
 1. FileUtil.bas [FileUtil.bas](#FileUtil)
 <hr>
 
-# ExcelUtil\.bas
+# ExcelUtil.bas
 
 1. **function toColName (columnNumber as Integer) as String**
 	```
