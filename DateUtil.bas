@@ -52,7 +52,7 @@ Function getLastDateOfQuarter(iYear As Integer, iQuarterNumber As Integer) As Da
 '    Integer iQuarterNumber : Quarter Number
 '    Returns Date : It returns the last date of the given quarter number and year
     
-    Dim resultDate As Integer
+    Dim resultDate As Date
     Dim tempDate As Date
         
     If iQuarterNumber = 1 Then
@@ -66,7 +66,7 @@ Function getLastDateOfQuarter(iYear As Integer, iQuarterNumber As Integer) As Da
     Else
         Err.Raise Err.Number + 2, "DateUtil.getLastDateOfQuarter", "ValueError : Invalid Quarter number, it can be 1,2,3,4 but provided : " & CStr(iQuarterNumber)
     End If
-    resultDate = WorksheetFunction.EoMonth(tempDate)
+    resultDate = WorksheetFunction.EoMonth(tempDate, 0)
     getLastDateOfQuarter = resultDate
     
 End Function
