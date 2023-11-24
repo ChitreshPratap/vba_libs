@@ -23,6 +23,7 @@ Sub createFolderPath(pathS As String)
         subFName = fso.GetBaseName(nPath)
         If fso.FolderExists(nPath) Then
             existingPath = nPath
+            Exit Do
         End If
         subDirs.Add subFName
         nPath = fso.GetParentFolderName(nPath)
@@ -32,16 +33,19 @@ Sub createFolderPath(pathS As String)
         subFName = subFName & "\" & subDirs.Item(i)
         fso.CreateFolder subFName
     Next i
-    
+
 End Sub
 
 
 Function getFullFilePathByPattern(fullFilePathPattern As String, Optional ifNotExistsRaiseError As Boolean = True) As String
     
-'    It returns the complete path of the provided path pattern.
-'    String fullFilePathPattern : The path pattern to get the full file path.
+'    It returns the complete path of the provided file path pattern. The pattern is allowed in the file name only.
+'    In the folder path patterns are not allowed. The folder in fullFilePathPattern must be without pattern.
+
+'    String fullFilePathPattern : The file name pattern to get the full file path. The folder name must not include patterns otherwise : Error : Bad file name
 '    Boolean ifNotExistsRaiseError :
 '    Returns String : It returns the complete possible existing path of the given.
+
 
     Dim fso As New FileSystemObject
     Dim inputFolderPath As String
