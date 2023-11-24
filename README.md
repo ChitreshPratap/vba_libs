@@ -54,6 +54,29 @@
 	If it is True, Then return Boolean (True/False) whether sheet exists or not.
 	```
 
+## DateUtil.bas
+
+1. **Function getLastDateOfQuarter(iYear As Integer, iQuarterNumber As Integer) As Date**
+	```
+	It returns last date of the given year and quarter number
+ 	Integer iYear : Year number
+	Integer iQuarterNumber : Quarter Number
+ 	Returns Date : It returns the last date of the given quarter number and year
+	```
+1. **Function getQuarterNumber(iDate As Date) As Integer**
+	```
+	It returns quarter number of the given date
+ 	Date iDate : Date to find quarter number
+ 	Returns Integer : It returns the quarter number of the provided date
+	```
+1. **Function getFormattedString(fDate As Date, stringToFormat As String) As String**
+	```
+	It returns the formatted string of the given date and date formatted string. It put the Date/Time parts of given Date/Time in the formatted string
+ 	Date parts symbols must be enclosed inside % %. Example: "I was born in year %YYYY%".
+ 	Date fDate : Date to formatted string
+ 	String stringToFormat : Formatted String with date parts enclosed inside %%. Date parts symbols must be enclosed inside % %. Example: "I was born in year %YYYY%".
+ 	Returns String : It returns the formatted string with the resulted date/time value inside the string
+	```
 
 
 
