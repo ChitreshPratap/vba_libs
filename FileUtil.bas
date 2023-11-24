@@ -2,9 +2,11 @@ Attribute VB_Name = "FileUtil"
 'Requirement :
 'Library : Microsoft Script Runtime
 
-
 Sub createFolderPath(pathS As String)
-    
+'    It creates the given path if given path not exists. If provided path exists then do nothing.
+'    String pathS : The path to create.
+'    Returns : Nothing
+
     Dim fso As New FileSystemObject
     Dim subDirs As New Collection
     Dim i As Integer
@@ -36,6 +38,11 @@ End Sub
 
 Function getFullFilePathByPattern(fullFilePathPattern As String, Optional ifNotExistsRaiseError As Boolean = True) As String
     
+'    It returns the complete path of the provided path pattern.
+'    String fullFilePathPattern : The path pattern to get the full file path.
+'    Boolean ifNotExistsRaiseError :
+'    Returns String : It returns the complete possible existing path of the given.
+
     Dim fso As New FileSystemObject
     Dim inputFolderPath As String
     Dim fullFileName As String

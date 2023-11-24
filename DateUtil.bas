@@ -1,10 +1,12 @@
 Attribute VB_Name = "DateUtil"
 
 Function getFormattedString(fDate As Date, stringToFormat As String) As String
-    'It returns the formatted string and put the time values of given fDate in the formatted string
-    'Date parts symbols must be enclosed inside % %
-    'Example: It is %YYY% Year ==> Output : It is 2023 Year
-    
+'    It returns the formatted string of the given date and date formatted string. It put the Date/Time parts of given Date/Time in the formatted string
+'    Date parts symbols must be enclosed inside % %. Example: "I was born in year %YYYY%".
+'    Date fDate : Date to formatted string
+'    String stringToFormat : Formatted String with date parts enclosed inside %%. Date parts symbols must be enclosed inside % %. Example: "I was born in year %YYYY%".
+'    Returns String : It returns the formatted string with the resulted date/time value inside the string
+
     Dim formattedString As String
     Dim splittedString As Variant
     Dim resultString As String
@@ -26,7 +28,9 @@ End Function
 
 
 Function getQuarterNumber(iDate As Date) As Integer
-    'It returns quarter number of the given input date
+'    It returns quarter number of the given date
+'    Date iDate : Date to find quarter number
+'    Returns Integer : It returns the quarter number of the provided date
     
     Dim resultQtr As Integer
     If Month(iDate) <= 3 Then
@@ -43,7 +47,10 @@ Function getQuarterNumber(iDate As Date) As Integer
 End Function
 
 Function getLastDateOfQuarter(iYear As Integer, iQuarterNumber As Integer) As Date
-    'It returns last date of the given year and quarter number
+'    It returns last date of the given year and quarter number
+'    Integer iYear : Year number
+'    Integer iQuarterNumber : Quarter Number
+'    Returns Date : It returns the last date of the given quarter number and year
     
     Dim resultDate As Integer
     Dim tempDate As Date
