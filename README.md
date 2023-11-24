@@ -16,9 +16,9 @@
 	Returns String : The alphabetical column name of the corresponding integral column number.
 	```
 
-1. **getExcelLink1(fso As Object, excelFileName As String, sheetName As String, cellRange As String) As String**
+1. **Function getExcelLink1(fso As Object, excelFileName As String, sheetName As String, cellRange As String) As String**
 	```
-	It returns the excel link of given workbook, sheetName and cellRange.
+	It returns the excel link of given workbook, sheetName and cellRange. It does not open workbook file.
 	fso : FileSystemObject : object of the FileSystemObject.
 	String excelFileName : Full file name of excel workbook
 	String sheetName : Name of the worksheet
@@ -26,3 +26,11 @@
 	Returns String : the link to the cellRange of the given excelFileName and sheetName
 	```
 
+1. **Function getExcelLink2(wb As Workbook, sheetName As String, cellRange As String) As String**
+	```
+	It returns the excel link of given workbook, sheetName and cellRange. Workbook must be open.
+	Workbook wb : Workbook object to create a link with.
+	String sheetName : Name of the worksheet
+	cellRange : String = Address of the cell
+	Returns String : the link to the cellRange of the given excelFileName and sheetName
+	```
