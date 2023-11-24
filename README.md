@@ -78,6 +78,23 @@
  	Returns String : It returns the formatted string with the resulted date/time value inside the string
 	```
 
+## FileUtil.bas
+	Required Dependency : Library FileSystemObject
+1. **Sub createFolderPath(pathS As String)**
+	```
+	It creates the given path if given path not exists. If provided path exists then do nothing. 
+ 	String pathS : The path to create.
+ 	Returns : Nothing
+	```
+
+1. **Function getFullFilePathByPattern(fullFilePathPattern As String, Optional ifNotExistsRaiseError As Boolean = True) As String**
+	```
+	It returns the complete path of the provided path pattern.
+ 	String fullFilePathPattern : The path pattern to get the full file path.
+ 	Boolean ifNotExistsRaiseError : 
+ 	Returns String : It returns the complete possible existing path of the given.
+	```
+
 
 
 
