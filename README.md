@@ -2,7 +2,7 @@
  VBA Library to work with vba projects. It contains various utility modules, classes and user forms.
 
 ## Available Modules are: </h3>
-1. ExcelUtil.bas [ExcelUtil.bas](##ExcelUtil.bas)
+1. ExcelUtil.bas [ExcelUtil.bas](# ExcelUtil.bas)
 1. DateUtil.bas [DateUtil.bas](DateUtil-bas)
 1. FileUtil.bas [FileUtil.bas](#FileUtil.bas)
 1. [Markdown - Link](#-DateUtil.bas)
