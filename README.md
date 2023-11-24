@@ -3,11 +3,11 @@
 
 ## Available Modules are: </h3>
 1. ExcelUtil.bas [ExcelUtil.bas](#excelutilbas))
-1. DateUtil.bas [DateUtil.bas](#DateUtil)
-1. FileUtil.bas [FileUtil.bas](#FileUtil)
+1. DateUtil.bas [DateUtil.bas](#dateutilbas)
+1. FileUtil.bas [FileUtil.bas](#fileutilbas)
 <hr>
 
-# ExcelUtil.bas
+## ExcelUtil.bas
 
 1. **function toColName (columnNumber as Integer) as String**
 	```
@@ -54,7 +54,7 @@
 	If it is True, Then return Boolean (True/False) whether sheet exists or not.
 	```
 
-# DateUtil
+## DateUtil.bas
 
 1. **Function getLastDateOfQuarter(iYear As Integer, iQuarterNumber As Integer) As Date**
 	```
@@ -78,7 +78,7 @@
  	Returns String : It returns the formatted string with the resulted date/time value inside the string
 	```
 
-## FileUtil
+## FileUtil.bas
 	Required Dependency : Library FileSystemObject
 1. **Sub createFolderPath(pathS As String)**
 	```
