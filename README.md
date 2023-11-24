@@ -2,19 +2,16 @@
  VBA Library to work with vba projects. It contains various utility modules, classes and user forms.
 
 <h3> Available Modules are: </h3>
-
-	<ol>
-		<li>ExcelUtil.bas</li>
-		<li>DateUtil.bas</li>
-		<li>FileUtil.bas</li>
-	</ol>
-
-
+<ol>
+	<li>ExcelUtil.bas</li>
+	<li>DateUtil.bas</li>
+	<li>FileUtil.bas</li>
+</ol>
+<hr>
 <h3>Modules : </h3>
-	<h4>ExcelUtil.bas</h4>
-		<h5>Functions</h5>		
-
-		<h6>toColName</h6><h7>(columnNumber as Integer) as String</h7>
+<h4>ExcelUtil.bas</h4>
+<h5>Functions</h5>		
+<h6>toColName</h6><h7>(columnNumber as Integer) as String</h7>
 		<p>It returns the alphabetical column name of the corresponding integral column number</p>
 		<p>columnNumber : Integer = The integral column number</p>
 		<p>Returns : String = The alphabetical column name of the corresponding integral column number</p>
