@@ -2,14 +2,12 @@
  VBA Library to work with vba projects. It contains various utility modules, classes and user forms.
 
 ## Available Modules are: </h3>
-1. ExcelUtil.bas [ExcelUtil.bas](#ExcelUtil.bas)
-1. DateUtil.bas [DateUtil.bas](#DateUtil\.bas)
-1. FileUtil.bas [FileUtil.bas](#FileUtil\.bas)
-1. [Markdown - Link](#-DateUtil.bas)
-1. [1Markdown - Link](#DateUtil)
+1. ExcelUtil.bas [ExcelUtil.bas](#ExcelUtil)
+1. DateUtil.bas [DateUtil.bas](#DateUtil)
+1. FileUtil.bas [FileUtil.bas](#FileUtil)
 <hr>
 
-# ExcelUtil.bas
+# ExcelUtil
 
 1. **function toColName (columnNumber as Integer) as String**
 	```
@@ -80,7 +78,7 @@
  	Returns String : It returns the formatted string with the resulted date/time value inside the string
 	```
 
-## FileUtil.bas
+## FileUtil
 	Required Dependency : Library FileSystemObject
 1. **Sub createFolderPath(pathS As String)**
 	```
