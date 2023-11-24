@@ -2,12 +2,13 @@
  VBA Library to work with vba projects. It contains various utility modules, classes and user forms.
 
 ## Available Modules are: </h3>
-1. ExcelUtil.bas</li>
-1. DateUtil.bas</li>
-1. FileUtil.bas</li>
+1. ExcelUtil.bas [ExcelUtil.bas](##ExcelUtil.bas)
+1. DateUtil.bas [DateUtil.bas](DateUtil-bas)
+1. FileUtil.bas [FileUtil.bas](#FileUtil.bas)
+1. [Markdown - Link](#-DateUtil.bas)
 <hr>
 
-## ExcelUtil.bas
+# ExcelUtil.bas
 
 1. **function toColName (columnNumber as Integer) as String**
 	```
@@ -54,7 +55,7 @@
 	If it is True, Then return Boolean (True/False) whether sheet exists or not.
 	```
 
-## DateUtil.bas
+# DateUtil.bas
 
 1. **Function getLastDateOfQuarter(iYear As Integer, iQuarterNumber As Integer) As Date**
 	```
