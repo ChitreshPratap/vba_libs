@@ -58,7 +58,7 @@ Function worksheetExists(wb As Workbook, sheetName As String, ifNotExistsRaiseEr
     
     Dim sht As Worksheet
     On Error Resume Next
-    Set sht = wb.Worksheets(sheetName)
+    Set sht = wb.worksheets(sheetName)
     On Error GoTo 0
     If ifNotExistsRaiseError Then
         If sht Is Nothing Then
@@ -72,4 +72,6 @@ Function worksheetExists(wb As Workbook, sheetName As String, ifNotExistsRaiseEr
     End If
     
 End Function
+
+
 

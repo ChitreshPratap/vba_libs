@@ -6,7 +6,7 @@ Attribute VB_Name = "ExcelConnection"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
-Attribute VB_Exposed = True
+Attribute VB_Exposed = False
 Dim var_conn As ADODB.Connection
 Dim var_excelFileName As String
 
@@ -23,17 +23,26 @@ Public Property Get excelDBFileName() As String
 End Property
 
 Public Property Get getOpenConnection() As ADODB.Connection
-    
+    Dim dbFileName As String
+    dbFileName = Me.excelDBFileName
+    If dbFileName = "" Then
+        Err.Raise vbObjectError + 12, "ExcelConnection.getOpenConnection", "ExcelDBFile is blank, Please set excelDBFile"
+    End If
     var_conn.ConnectionString = _
         "Provider=Microsoft.ACE.OLEDB.12.0;" & _
-        "Data Source=" & wbCopy_path & ";" & _
+        "Data Source=" & dbFileName & ";" & _
         "Extended Properties='Excel 12.0 Xml;HDR=Yes';"
+        On Error GoTo ConnectionError
     var_conn.Open
     Set getOpenConnection = var_conn
+    Exit Property
+ConnectionError:
+    Err.Raise Err.Number + 6, "ExcelConnection.getOpenConnection", "ConnectionError : The connection failed to open. " & vbNewLine & Err.Description
 End Property
 
-Public Sub closeConnection()
+Public Sub CloseConnection()
+    On Error Resume Next
     var_conn.Close
     Set var_conn = Nothing
 End Sub
-    
+
