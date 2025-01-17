@@ -45,7 +45,7 @@ Sub example_getExcelLink3()
     Dim wb As Workbook
     Dim targetRange As Range
     Set wb = ThisWorkbook
-    Set targetRange = wb.worksheets("Sheet1").Range("A3:D7")
+    Set targetRange = wb.Worksheets("Sheet1").Range("A3:D7")
     resultedLink = ExcelUtil.getExcelLink3(targetRange)
     Debug.Print resultedLink
     

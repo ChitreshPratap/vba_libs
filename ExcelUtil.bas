@@ -1,5 +1,16 @@
 Attribute VB_Name = "ExcelUtil"
 
+
+Function getWorksheet(wb As Workbook, sheetName As String, ifNotExistsRaiseError As Boolean) As Worksheet
+    Dim sheetExists As Boolean
+    Dim wsSheet As Worksheet
+    sheetExists = ExcelUtil.worksheetExists(wb, sheetName, ifNotExistsRaiseError)
+    If sheetExists Then
+        Set getWorksheet = wb.Worksheets(sheetName)
+    End If
+        Set getWorksheet = Nothing
+End Function
+
 Function toColName(colNumber As Integer) As String
 '    It returns the alphabetical column name of the corresponding integral column number
 '    Integer columnNumber : The integral column number.
@@ -58,7 +69,7 @@ Function worksheetExists(wb As Workbook, sheetName As String, ifNotExistsRaiseEr
     
     Dim sht As Worksheet
     On Error Resume Next
-    Set sht = wb.worksheets(sheetName)
+    Set sht = wb.Worksheets(sheetName)
     On Error GoTo 0
     If ifNotExistsRaiseError Then
         If sht Is Nothing Then

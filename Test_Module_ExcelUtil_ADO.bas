@@ -51,7 +51,7 @@ Sub example_getDataAsRecordSet_writeRecordSetToWorksheet()
     Debug.Print "Total Records Count : " & CStr(colCount)
     
     Set wbTarget = Workbooks.Open("C:\Users\pc\Downloads\TargetSource.xlsx")
-    Set wsTarget = wbTarget.worksheets("Sheet1")
+    Set wsTarget = wbTarget.Worksheets("Sheet1")
     writeRecordSetToWorksheet resultRecordSet, wsTarget.Range("M4"), False
 
 CloseResources:
