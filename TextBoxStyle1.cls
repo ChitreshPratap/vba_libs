@@ -44,7 +44,8 @@ Sub init(mukhTextBox As Control, Optional placeholder As String = "Enter Value")
     var_lblLine.BackColor = VarnahUtil.getFadeColor(var_mukhTextBox.ForeColor, -0.3)
     var_lblCaption.ForeColor = VarnahUtil.getFadeColor(var_mukhTextBox.ForeColor, 0.55)
     var_lblCaption.ZOrder (1)
-
+    Me.styleOnTextChanged
+    
 End Sub
 
 Sub styleOnTextChanged()
