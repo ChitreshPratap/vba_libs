@@ -2,6 +2,21 @@ Attribute VB_Name = "FileUtil"
 'Requirement :
 'Library : Microsoft Script Runtime
 
+Function fileExists(filePath As String, ifNotExistsRaiseError As Boolean) As Boolean
+    Dim fso As New FileSystemObject
+    
+    If fso.fileExists(filePath) Then
+        fileExists = True
+    Else
+        If ifNotExistsRaiseError Then
+            Err.Raise vbObjectError + 2, "FileUtil.fileExists", "FileNotFoundError : " & vbNewLine & "File : '" & filePath & "' not found"
+        Else
+            fileExists = False
+        End If
+    End If
+End Function
+
+
 Sub createFolderPath(pathS As String)
 '    It creates the given path if given path not exists. If provided path exists then do nothing.
 '    String pathS : The path to create.
