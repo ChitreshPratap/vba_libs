@@ -2,11 +2,16 @@ Attribute VB_Name = "Test_Module_FileUtil"
 
 Sub example_getFullFilePathByPattern()
     
+    Dim t As Variant
+    Dim fileCollection As Collection
     Dim filePattern As String
     Dim resultedFilePath As String
-    filePattern = "C:\Users\pc\Downloads\Dish\Manager Data*Nov.xlsx"
-    resultedFilePath = FileUtil.getFullFilePathByPattern(filePattern, True)
-    Debug.Print resultedFilePath
+    filePattern = "C:\Users\pc\Downloads\Dish\Daily*"
+    Set fileCollection = FileUtil.getFullFilePathsByPattern(filePattern, False, True)
+    For Each t In fileCollection
+        Debug.Print t
+    Next t
+
 
 End Sub
 

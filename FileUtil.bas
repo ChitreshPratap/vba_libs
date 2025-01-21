@@ -52,16 +52,18 @@ Sub createFolderPath(pathS As String)
 End Sub
 
 
-Function getFullFilePathByPattern(fullFilePathPattern As String, Optional ifNotExistsRaiseError As Boolean = True) As String
+Function getFullFilePathsByPattern(fullFilePathPattern As String, Optional ifNotExistsRaiseError As Boolean = True, Optional ifMultipleFilesFoundRaiseError As Boolean = True) As Collection
     
 '    It returns the complete path of the provided file path pattern. The pattern is allowed in the file name only.
 '    In the folder path patterns are not allowed. The folder in fullFilePathPattern must be without pattern.
 
 '    String fullFilePathPattern : The file name pattern to get the full file path. The folder name must not include patterns otherwise : Error : Bad file name
 '    Boolean ifNotExistsRaiseError :
-'    Returns String : It returns the complete possible existing path of the given.
+'    Boolean ifMultipleFilesFoundRaiseError:
+'    Returns Collection : It returns collection of the complete possible existing path of the given pattern.
 
-
+    Dim fileCollection As Collection
+    Set fileCollection = New Collection
     Dim fso As New FileSystemObject
     Dim inputFolderPath As String
     Dim fullFileName As String
@@ -77,10 +79,21 @@ Function getFullFilePathByPattern(fullFilePathPattern As String, Optional ifNotE
         If ifNotExistsRaiseError Then
             Err.Raise vbObjectError + 2, "FileUtil.getFullFilePathByPattern", "FileNotFoundError : " & vbNewLine & "File : '" & fullFileName & "' not found"
         Else
-            getFullFilePathByPattern = fullFileName
+            Set getFullFilePathsByPattern = fileCollection
         End If
     Else
-        getFullFilePathByPattern = inputFolderPath & "\" & fileName
+        Do While fileName <> ""
+            fileCollection.Add inputFolderPath & "\" & fileName
+            fileName = Dir
+        Loop
+        Dim fileCount As Long
+        fileCount = fileCollection.Count
+        If fileCount > 1 Then
+            If ifMultipleFilesFoundRaiseError Then
+                Err.Raise vbObjectError + 2, "FileUtil.getFullFilePathsByPattern", "MultipleFileFoundWithPattern : " & vbNewLine & "File : '" & fullFileName & "' multiple files found"
+            End If
+        End If
+        Set getFullFilePathsByPattern = fileCollection
     End If
 
 End Function
