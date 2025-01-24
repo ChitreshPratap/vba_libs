@@ -54,7 +54,7 @@ End Sub
 
 Function getFullFilePathsByPattern(fullFilePathPattern As String, Optional ifNotExistsRaiseError As Boolean = True, Optional ifMultipleFilesFoundRaiseError As Boolean = True) As Collection
     
-'    It returns the complete path of the provided file path pattern. The pattern is allowed in the file name only.
+'    It returns the collection of complete path of the provided file path pattern. The pattern is allowed in the file name only.
 '    In the folder path patterns are not allowed. The folder in fullFilePathPattern must be without pattern.
 
 '    String fullFilePathPattern : The file name pattern to get the full file path. The folder name must not include patterns otherwise : Error : Bad file name
