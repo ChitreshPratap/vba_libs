@@ -1,5 +1,49 @@
 Attribute VB_Name = "ExcelUtil"
 
+Sub deleteWorksheet(wb As Workbook, sheetNameToDelete As String)
+    'It will delete the specified worksheets from the workbook.
+    'It will do nothing if worksheet not exists
+    'It not returns anything.
+    
+    Dim wsToDelete As Worksheet
+    Dim origDisplayAlerts As Boolean
+    
+    origDisplayAlerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Set wsToDelete = wb.Worksheets(sheetNameToDelete)
+    wsToDelete.Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = origDisplayAlerts
+    
+End Sub
+
+Function createWorksheet(wb As Workbook, sheetName As String, ifAlreadyExistsRaiseError As Boolean) As Worksheet
+'It will return the new created worksheet
+'It will create the new worksheet in the last and return that worksheet object
+'If worksheet already exists --> Then raise Error / return Nothing i.e., if worksheet exists it not do
+'anything with the existing worksheet.
+
+    Dim wsSheet As Worksheet
+    Dim sheetExists As Boolean
+    sheetExists = ExcelUtil.worksheetExists(wb, sheetName, False)
+    If sheetExists Then
+        If ifAlreadyExistsRaiseError Then
+            Err.Raise vbObjectError + 2, "ExcelUtil.CreateWorksheet", "WorksheetAlreadyExists : '" & sheetName & "' already exits" _
+            & vbNewLine & "File : '" & wb.FullName & "'"
+        Else
+            Set wsSheet = Nothing
+        End If
+        
+    Else
+        
+        wb.Worksheets.Add After:=wb.Worksheets(wb.Worksheets.Count)
+        Set wsSheet = wb.Worksheets(wb.Worksheets.Count)
+        wsSheet.Name = sheetName
+    End If
+    
+    Set createWorksheet = wsSheet
+End Function
 
 Function getWorksheet(wb As Workbook, sheetName As String, ifNotExistsRaiseError As Boolean) As Worksheet
     Dim sheetExists As Boolean

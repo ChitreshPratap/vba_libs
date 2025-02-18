@@ -1,4 +1,33 @@
 Attribute VB_Name = "Test_Module_ExcelUtil"
+Sub exampleDeleteWorksheet()
+    
+    Dim wb As Workbook
+    Dim wsTesting As Worksheet
+    Set wb = ThisWorkbook
+    Application.DisplayAlerts = True
+    ExcelUtil.deleteWorksheet wb, "TestingCreate2"
+    
+    'Set wsTesting = ExcelUtil.createWorksheet(wb, "TestingCreate1", True)
+    Set wsTesting = ExcelUtil.createWorksheet(wb, "TestingCreate1", False)
+    
+    'Debug.Print wsTesting.Name
+    Debug.Print Application.DisplayAlerts
+
+
+End Sub
+Sub example_createWorksheet()
+    Dim wb As Workbook
+    Dim wsTesting As Worksheet
+    Set wb = ThisWorkbook
+    
+    'Set wsTesting = ExcelUtil.createWorksheet(wb, "TestingCreate1", False)
+    'Set wsTesting = ExcelUtil.createWorksheet(wb, "TestingCreate1", True)
+    Set wsTesting = ExcelUtil.createWorksheet(wb, "TestingCreate1", False)
+    
+    Debug.Print wsTesting.Name
+
+End Sub
+
 
 Sub example_toColName()
     
