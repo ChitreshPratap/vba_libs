@@ -15,5 +15,18 @@ Function getEndCell(rRange As Range) As Range
     Set getEndCell = reqRange
 End Function
 
-
+Function getUniqueValues(udRange As Range) As Dictionary
+    
+    Dim dictUniqueValues As Dictionary
+    Set dictUniqueValues = New Dictionary
+    
+    Dim tempRange As Range
+    
+    For Each tempRange In udRange
+        If Not dictUniqueValues.Exists(CStr(tempRange.value)) And tempRange <> "" Then
+            dictUniqueValues.Add CStr(tempRange.value), Nothing
+        End If
+    Next tempRange
+    Set getUniqueValues = dictUniqueValues
+End Function
 
