@@ -1,5 +1,37 @@
 Attribute VB_Name = "ExcelUtil"
 
+Function getModuleName() As String
+    Dim reqName As String
+    reqName = "ExcelUtil"
+    getModuleName = reqName
+End Function
+Function getQueryByName(wb As Workbook, queryName As String) As WorkbookQuery
+    'Return the specified query from the workbook
+    'If no query exists then raise error
+    
+    Dim reqQuery As WorkbookQuery
+    Dim tWb As Workbook
+    Set tWb = wb
+    On Error GoTo errorQueryNotFound
+    Set reqQuery = tWb.Queries(queryName)
+    Exit Function
+errorQueryNotFound:
+    Err.Raise vbObjectError + 1001, ExcelUtil.getModuleName & "." & "getQueryByName", "QueryNotFoundError : Query - '" & queryName & "' not found" & vbNewLine & _
+    "Workbook - '" & tWb.FullName
+    
+End Function
+
+Function getQueries(wb As Workbook) As Queries
+    'Returns all Queries inside Workbook
+    'If no query in workbook then returns --> Nothing
+    Dim tWb As Workbook
+    Dim pQueries As Queries
+    Set tWb = wb
+    Set pQueries = tWb.Queries
+    Set getQueries = pQueries
+End Function
+
+
 Sub deleteWorksheet(wb As Workbook, sheetNameToDelete As String)
     'It will delete the specified worksheets from the workbook.
     'It will do nothing if worksheet not exists
@@ -19,17 +51,17 @@ Sub deleteWorksheet(wb As Workbook, sheetNameToDelete As String)
 End Sub
 
 Function createWorksheet(wb As Workbook, sheetName As String, ifAlreadyExistsRaiseError As Boolean) As Worksheet
-'It will return the new created worksheet
-'It will create the new worksheet in the last and return that worksheet object
-'If worksheet already exists --> Then raise Error / return Nothing i.e., if worksheet exists it not do
-'anything with the existing worksheet.
+    'It will return the new created worksheet
+    'It will create the new worksheet in the last and return that worksheet object
+    'If worksheet already exists --> Then raise Error / return Nothing i.e., if worksheet exists it not do
+    'anything with the existing worksheet.
 
     Dim wsSheet As Worksheet
     Dim sheetExists As Boolean
     sheetExists = ExcelUtil.worksheetExists(wb, sheetName, False)
     If sheetExists Then
         If ifAlreadyExistsRaiseError Then
-            Err.Raise vbObjectError + 2, "ExcelUtil.CreateWorksheet", "WorksheetAlreadyExists : '" & sheetName & "' already exits" _
+            Err.Raise vbObjectError + 1001, ExcelUtil.getModuleName & "." & "CreateWorksheet", "WorksheetAlreadyExists : '" & sheetName & "' already exits" _
             & vbNewLine & "File : '" & wb.FullName & "'"
         Else
             Set wsSheet = Nothing
@@ -117,7 +149,7 @@ Function worksheetExists(wb As Workbook, sheetName As String, ifNotExistsRaiseEr
     On Error GoTo 0
     If ifNotExistsRaiseError Then
         If sht Is Nothing Then
-            Err.Raise vbObjectError + 1, "ExcelUtil.worksheetExists", "SheetNotFoundError : '" & sheetName & "' not found" _
+            Err.Raise vbObjectError + 1001, ExcelUtil.getModuleName & "." & "WorksheetExists", "SheetNotFoundError : '" & sheetName & "' not found" _
             & vbNewLine & "File : '" & wb.FullName & "'"
         Else
             worksheetExists = True
