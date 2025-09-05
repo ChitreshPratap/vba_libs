@@ -57,9 +57,6 @@ Sub FilterRecordsByCriteriaRange(filterRange_Data As Range, criteriaRange As Ran
         
 End Sub
 
-
-
-
 Sub deleteVisibleData(filterRange_Data As Range, Optional deleteHeader As Boolean = False)
 
     Dim visibleRowsCount As Long
