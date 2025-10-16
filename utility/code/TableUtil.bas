@@ -38,3 +38,40 @@ errorTableNotFound:
     
 End Function
 
+Function clearTable(qTable As ListObject) As Long
+
+    ' It delete all rows of the table except headers and formatting
+    ' and return the number of rows deleted
+    
+    Dim rowsInTable As Long
+    Dim rowsDeleting As Long
+    
+    rowsInTable = qTable.ListRows.Count
+    
+    If rowsInTable > 0 Then
+        rowsDeleting = qTable.DataBodyRange.Rows.Count
+        qTable.DataBodyRange.Rows.Delete
+    Else
+        rowsDeleting = 0
+    End If
+    clearTable = rowsDeleting
+End Function
+
+Function refreshTable(qTable As ListObject) As Long
+
+    'It refreshed all table
+    'and returns the number of rows retrieved
+    
+    Dim rowsInTable As Long
+    Dim rowsRetrieved As Long
+    
+    rowsInTable = qTable.ListRows.Count
+    qTable.QueryTable.Refresh BackgroundQuery:=False
+    
+    If qTable.ListRows.Count > 0 Then
+        rowsRetrieved = qTable.DataBodyRange.Rows.Count
+    Else
+        rowsRetrieved = 0
+    End If
+    refreshTable = rowsRetrieved
+End Function
