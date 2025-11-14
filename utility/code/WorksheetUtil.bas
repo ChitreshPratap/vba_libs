@@ -16,4 +16,21 @@ errorTableNotFound:
 
 End Function
 
+Function getLastNonEmptyCell_InRows(ws As Worksheet) As Range
+
+    Dim lastRowRange As Range
+    
+    Set lastRowRange = ws.Cells.Find("*", After:=ws.Range("A1"), searchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    Set getLastNonEmptyCell_InRows = lastRowRange
+    
+End Function
+
+Function getLastNonEmptyCell_InColumns(ws As Worksheet) As Range
+
+    Dim lastColumnRange As Range
+    
+    Set lastColumnRange = ws.Cells.Find("*", After:=ws.Range("A1"), searchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    Set getLastNonEmptyCell_InColumns = lastColumnRange
+    
+End Function
 
