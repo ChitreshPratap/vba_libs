@@ -2,6 +2,28 @@ Attribute VB_Name = "FileUtil"
 'Requirement :
 'Library : Microsoft Script Runtime
 
+Sub deleteAllFilesFromFolder(folderPath As String)
+    
+    Dim fso As FileSystemObject
+    Dim fold As Folder
+    Dim tFile As File
+    Set fso = New FileSystemObject
+        
+    Dim fileCount As Long
+    
+    fold = fso.GetFolder(folderPath)
+    fileCount = fold.Files.Count
+    
+    For Each tFile In fold.Files
+        tFile.Delete
+    Next tFile
+    
+    Set tFile = Nothing
+    Set fold = Nothing
+    Set fso = Nothing
+    
+End Sub
+
 Function fileExists(filePath As String, ifNotExistsRaiseError As Boolean) As Boolean
     Dim fso As New FileSystemObject
     
@@ -97,3 +119,26 @@ Function getFullFilePathsByPattern(fullFilePathPattern As String, Optional ifNot
     End If
 
 End Function
+
+Function getSelectedFolders(Optional titleDialogBox As String = "Select folder", Optional allowMultipleSelect As Boolean = False) As Variant
+    Dim selectedFolderList As Variant
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = titleDialogBox
+        .allowMultiSelect = allowMultipleSelect
+        If .Show = -1 Then
+            Set selectedFolderList = .SelectedItems
+        End If
+    End With
+    Set getSelectedFolders = selectedFolderList
+End Function
+
+Function getSelectedFolder(Optional titleDialogBox As String = "Select folder", Optional allowMultipleSelect As Boolean = False) As String
+    
+    Dim selectedFolders As Variant
+    Dim selectedFolder As String
+    Set selectedFolders = getSelectedFolders(titleDialogBox, allowMultipleSelect)
+    selectedFolder = selectedFolders(1)
+    getSelectedFolder = selectedFolder
+End Function
+
+

@@ -24,3 +24,10 @@ Sub example_createFolderPath()
 
 End Sub
 
+Sub example_getSelectedFolder()
+    Dim fold As Variant
+    Set fold = FileUtil.getSelectedFolders("Select Math Folder", True)
+
+End Sub
+
+

@@ -97,3 +97,27 @@ Function createWorksheet(sheetName As String, ifAlreadyExistsRaiseError As Boole
     createWorksheet = reqSheet
 End Function
 
+Sub protectWorkbook(wbPassword As String)
+    Dim wb As Workbook
+    Set wb = Me.getWorkbook()
+    wb.Password = wbPassword
+End Sub
+
+Function getOpenedWB(wbFilePath As String, Optional wbPassword As String = "", Optional openReadonly As Boolean = True) As Workbook
+    Dim openedWb As Workbook
+    On Error Resume Next
+    
+    On Error Resume Next
+    Set openedWb = Workbooks.Open(fileName:=wbFilePath, ReadOnly:=openReadonly)
+    
+    If openedWb Is Nothing Then
+        Set openedWb = Workbooks.Open(fileName:=wbFilePath, ReadOnly:=openReadonly, Password:=wbPassword)
+    End If
+    
+    If openedWb Is Nothing Then
+        Err.Raise vbObjectError + 110, Me.className & ":" & "Invalid password provided to open file." & vbNewLine & "File : '" & wbFilePath & "'."
+    Else
+        Set getOpenedWB = openedWb
+    End If
+End Function
+
