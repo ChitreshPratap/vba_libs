@@ -1,6 +1,212 @@
 Attribute VB_Name = "ArrayUtil"
 Option Explicit
 
+
+Function filterArrayByPatterns_getLikeNotLikePatterns(arr As Variant, filterCol As Long, patterns As Variant) As Collection
+
+    Dim i As Long, j As Long, k As Long
+    Dim rowCount As Long, colCount As Long
+    Dim matchArr() As Variant, nonMatchArr() As Variant
+    Dim matchCount As Long, nonMatchCount As Long
+    Dim val As String, pat As String
+    Dim isMatch As Boolean
+    
+    Dim result As New Collection
+    
+    On Error GoTo ErrorHandler
+    
+    ' Validation
+    If Not IsArray(arr) Then
+        Err.Raise vbObjectError + 22000, "ArrauUtil.filterArrayByPatterns_getLikeNotLikePatterns", "Input is not an array"
+    End If
+    
+    If Not IsArray(patterns) Then
+        Err.Raise vbObjectError + 22001, "ArrauUtil.filterArrayByPatterns_getLikeNotLikePatterns", "patterns must be an array"
+    End If
+    
+    rowCount = UBound(arr, 1)
+    colCount = UBound(arr, 2)
+    
+    If filterCol < 1 Or filterCol > colCount Then
+        Err.Raise vbObjectError + 22002, "FilterArrayByPatternSplitCI", "Invalid column index"
+    End If
+    
+    ' Optimize: convert patterns to lowercase once
+    For k = LBound(patterns) To UBound(patterns)
+        patterns(k) = LCase(CStr(patterns(k)))
+    Next k
+    
+    ' First pass: count
+    For i = 1 To rowCount
+        
+        val = LCase(CStr(arr(i, filterCol)))
+        isMatch = False
+        
+        For k = LBound(patterns) To UBound(patterns)
+            If val Like patterns(k) Then
+                isMatch = True
+                Exit For
+            End If
+        Next k
+        
+        If isMatch Then
+            matchCount = matchCount + 1
+        Else
+            nonMatchCount = nonMatchCount + 1
+        End If
+        
+    Next i
+    
+    ' Create arrays if needed
+    If matchCount > 0 Then ReDim matchArr(1 To matchCount, 1 To colCount)
+    If nonMatchCount > 0 Then ReDim nonMatchArr(1 To nonMatchCount, 1 To colCount)
+    
+    ' Second pass: populate
+    Dim mRow As Long, nRow As Long
+    mRow = 0: nRow = 0
+    
+    For i = 1 To rowCount
+        
+        val = LCase(CStr(arr(i, filterCol)))
+        isMatch = False
+        
+        For k = LBound(patterns) To UBound(patterns)
+            If val Like patterns(k) Then
+                isMatch = True
+                Exit For
+            End If
+        Next k
+        
+        If isMatch Then
+            
+            mRow = mRow + 1
+            
+            For j = 1 To colCount
+                matchArr(mRow, j) = arr(i, j)
+            Next j
+            
+        Else
+            
+            nRow = nRow + 1
+            
+            For j = 1 To colCount
+                nonMatchArr(nRow, j) = arr(i, j)
+            Next j
+            
+        End If
+        
+    Next i
+    
+    ' Add to collection
+    result.Add matchArr, "MATCH"
+    result.Add nonMatchArr, "NON_MATCH"
+    
+    Set filterArrayByPatterns_getLikeNotLikePatterns = result
+    Exit Function
+
+ErrorHandler:
+    Err.Raise Err.Number, "ArrauUtil.filterArrayByPatterns_getLikeNotLikePatterns", Err.Description
+
+End Function
+
+
+Function filterArrayNotLikeCI(arr As Variant, filterCol As Long, patterns As Variant) As Variant
+
+    Dim i As Long, j As Long, k As Long
+    Dim rowCount As Long, colCount As Long
+    Dim outArr() As Variant
+    Dim outRow As Long
+    Dim matchFound As Boolean
+    Dim val As String, pat As String
+    
+    On Error GoTo ErrorHandler
+    
+    ' Validate input
+    If Not IsArray(arr) Then
+        Err.Raise vbObjectError + 21000, "ArrayUtil_FilterArrayNotLikeCI", "Input is not an array"
+    End If
+    
+    If Not IsArray(patterns) Then
+        Err.Raise vbObjectError + 21001, "ArrayUtil_FilterArrayNotLikeCI", "patterns must be an array"
+    End If
+    
+    rowCount = UBound(arr, 1)
+    colCount = UBound(arr, 2)
+    
+    If filterCol < 1 Or filterCol > colCount Then
+        Err.Raise vbObjectError + 21002, "ArrayUtil_FilterArrayNotLikeCI", "Invalid column index"
+    End If
+    
+    ' Pre-convert patterns to lowercase (optimization)
+    For k = LBound(patterns) To UBound(patterns)
+        patterns(k) = LCase(CStr(patterns(k)))
+    Next k
+    
+    ' First pass: count rows to keep (NOT matching)
+    Dim keepCount As Long
+    keepCount = 0
+    
+    For i = 1 To rowCount
+        
+        val = LCase(CStr(arr(i, filterCol)))
+        matchFound = False
+        
+        For k = LBound(patterns) To UBound(patterns)
+            If val Like patterns(k) Then
+                matchFound = True
+                Exit For
+            End If
+        Next k
+        
+        ' Keep only if NOT matched
+        If Not matchFound Then keepCount = keepCount + 1
+        
+    Next i
+    
+    ' If nothing to keep
+    If keepCount = 0 Then
+        filterArrayNotLikeCI = Empty
+        Exit Function
+    End If
+    
+    ' Create output array
+    ReDim outArr(1 To keepCount, 1 To colCount)
+    
+    ' Second pass: copy rows
+    outRow = 0
+    
+    For i = 1 To rowCount
+        
+        val = LCase(CStr(arr(i, filterCol)))
+        matchFound = False
+        
+        For k = LBound(patterns) To UBound(patterns)
+            If val Like patterns(k) Then
+                matchFound = True
+                Exit For
+            End If
+        Next k
+        
+        If Not matchFound Then
+            
+            outRow = outRow + 1
+            
+            For j = 1 To colCount
+                outArr(outRow, j) = arr(i, j)
+            Next j
+            
+        End If
+        
+    Next i
+    
+    filterArrayNotLikeCI = outArr
+    Exit Function
+
+ErrorHandler:
+    Err.Raise Err.Number, "ArrayUtil_FilterArrayNotLikeCI", Err.Description
+
+End Function
+
 Function filterArrayByPatternCI(arr As Variant, filterCol As Long, patterns As Variant) As Variant
     'It filter the array based on a column
     'return the rows of the column which has same patterns provided
@@ -63,22 +269,15 @@ Function filterArrayByPatternCI(arr As Variant, filterCol As Long, patterns As V
     For i = 1 To rowCount
         
         val = LCase(CStr(arr(i, filterCol)))
-        
         For k = LBound(patterns) To UBound(patterns)
-            
             pat = LCase(CStr(patterns(k)))
-            
             If val Like pat Then
-                
                 outRow = outRow + 1
-                
                 For j = 1 To colCount
                     outArr(outRow, j) = arr(i, j)
                 Next j
-                
                 Exit For
             End If
-            
         Next k
         
     Next i

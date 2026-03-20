@@ -1,7 +1,24 @@
 Attribute VB_Name = "Test_Module_ArrayUtil"
 Option Explicit
 
+
+
+Sub filterArrayNotLikeCI()
+    
+    Dim rngData As Range
+    Dim data As Variant
+    Dim outputArray As Variant
+    Set rngData = Range("D2:G16")
+    data = ArrayUtil.convertRangeToArraySafe(rngData)
+
+    outputArray = ArrayUtil.filterArrayNotLikeCI(data, 1, Array("del*", "M*rut"))
+
+
+End Sub
+
+
 Sub example_filterArrayByPatternCI()
+    
     Dim rngData As Range
     Dim data As Variant
     Dim outputArray As Variant
