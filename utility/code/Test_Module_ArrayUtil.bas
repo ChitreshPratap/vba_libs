@@ -1,9 +1,24 @@
 Attribute VB_Name = "Test_Module_ArrayUtil"
+
 Option Explicit
 
 
+Sub example_to1DArray()
+    Dim rngData As Range
+    Dim data As Variant
+    Dim tArray As Variant
+    Dim t1Array As Variant
+    Dim outputArray As Variant
+    Set rngData = Range("D2:G16")
+    data = ArrayUtil.convertRangeToArraySafe(rngData)
 
-Sub filterArrayNotLikeCI()
+    tArray = ArrayUtil.getColumnsFromArray(data, Array(2))
+    
+    t1Array = ArrayUtil.to1DArray(tArray)
+
+End Sub
+
+Sub example_filterArrayNotLikeCI()
     
     Dim rngData As Range
     Dim data As Variant

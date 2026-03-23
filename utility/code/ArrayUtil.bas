@@ -1,6 +1,46 @@
 Attribute VB_Name = "ArrayUtil"
 Option Explicit
 
+Function to1DArray(inputArray As Variant) As Variant
+    
+    On Error GoTo ErrorHandler
+    
+    Dim rowCount As Long
+    Dim colCount As Long
+    
+    Dim i As Long
+    
+    'validating input Array
+    If IsEmpty(inputArray) Then
+        Err.Raise vbObjectError + 1000, "ArrayUtil_to1DArray", "Input array is empty."
+    End If
+    If Not IsArray(inputArray) Then
+        Err.Raise vbObjectError + 1000, "ArrayUtil_to1DArray", "Input array is not an array."
+    End If
+    
+    ' Get dimensions
+    rowCount = UBound(inputArray, 1) - LBound(inputArray, 1) + 1
+    colCount = UBound(inputArray, 2) - LBound(inputArray, 2) + 1
+    
+    ' Ensure only 1 column
+    If colCount <> 1 Then
+        Err.Raise vbObjectError + 1002, "Convert2DTo1D", "Array must have exactly one column."
+    End If
+    
+    ' Resize result array
+    ReDim result(1 To rowCount)
+    
+    ' Convert
+    For i = 1 To rowCount
+        result(i) = inputArray(i, 1)
+    Next i
+    
+    to1DArray = result
+    Exit Function
+ErrorHandler:
+    Err.Raise Err.Number, "Convert2DTo1D", "Error converting 2D to 1D: " & Err.Description
+End Function
+
 
 Function filterArrayByPatterns_getLikeNotLikePatterns(arr As Variant, filterCol As Long, patterns As Variant) As Collection
 
@@ -759,6 +799,11 @@ Function getColumnsFromArray(arr As Variant, cols As Variant) As Variant
     
     On Error GoTo ErrorHandler
     
+    ' Validate input array
+    If IsEmpty(arr) Then
+        Err.Raise vbObjectError + 5000, "ArrayUtil_getColumnsFromArray", "Input is an empty array"
+    End If
+        
     ' Validate input array
     If Not IsArray(arr) Then
         Err.Raise vbObjectError + 5000, "ArrayUtil_getColumnsFromArray", "Input is not an array"
