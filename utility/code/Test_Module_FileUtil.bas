@@ -1,5 +1,41 @@
 Attribute VB_Name = "Test_Module_FileUtil"
 
+Sub example_getSubFoldersInsideFolder()
+
+    Dim resultDict As Object
+    Dim t As Variant
+    Dim files As Variant
+    Dim folderPath As String
+    folderPath = "C:\Users\DELL\OneDrive\Documents"
+    
+    'Return folder inside folder also
+    Set resultDict = FileUtil.getSubFoldersInsideFolder(folderPath, True)
+    
+    'Return direct folders
+   ' Set resultDict = FileUtil.getSubFoldersInsideFolder(folderPath, False)
+    files = resultDict("items")
+
+End Sub
+
+
+Sub example_getFileNamesInsideFolder()
+
+    Dim resultDict As Object
+    Dim t As Variant
+    Dim files As Variant
+    Dim folderPath As String
+    folderPath = "C:\Users\DELL\OneDrive\Documents"
+    'Returns all files
+    Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath)
+    'Returns only file names
+    Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath, Array("*.acc*", "*.pdf"))
+    
+    'Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath, Array("*.acc*", "*.pdf"), True)
+    files = resultDict("items")
+    
+End Sub
+
+
 Sub example_getFullFilePathByPattern()
     
     Dim t As Variant
@@ -24,9 +60,17 @@ Sub example_createFolderPath()
 
 End Sub
 
-Sub example_getSelectedFolder()
+Sub example_getSelectedFolders()
     Dim fold As Variant
-    Set fold = FileUtil.getSelectedFolders("Select Math Folder", True)
+    Set fold = FileUtil.getSelectedFolders(True, "Select Math Folder", True)
+    
+
+End Sub
+
+Sub example_getSelectedFolder()
+    Dim fold As String
+    fold = FileUtil.getSelectedFolder("Select Math Folder", True, True)
+    
 
 End Sub
 

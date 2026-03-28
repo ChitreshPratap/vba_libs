@@ -2,19 +2,35 @@ Attribute VB_Name = "FileUtil"
 'Requirement :
 'Library : Microsoft Script Runtime
 
+
+Private Sub TraverseFoldersCollection(ByVal folder As Object, _
+                                      ByRef col As Collection)
+            
+    Dim subFolder As Object
+    For Each subFolder In folder.SubFolders
+        ' Add folder path
+        col.Add subFolder.Path
+        ' ?? Recursive call (SAFE)
+        TraverseFoldersCollection subFolder, col
+    Next subFolder
+
+        
+End Sub
+
+
 Sub deleteAllFilesFromFolder(folderPath As String)
     
     Dim fso As FileSystemObject
-    Dim fold As Folder
+    Dim fold As folder
     Dim tFile As File
     Set fso = New FileSystemObject
         
     Dim fileCount As Long
     
     fold = fso.GetFolder(folderPath)
-    fileCount = fold.Files.Count
+    fileCount = fold.files.count
     
-    For Each tFile In fold.Files
+    For Each tFile In fold.files
         tFile.Delete
     Next tFile
     
@@ -25,8 +41,8 @@ Sub deleteAllFilesFromFolder(folderPath As String)
 End Sub
 
 Function fileExists(filePath As String, ifNotExistsRaiseError As Boolean) As Boolean
-    Dim fso As New FileSystemObject
     
+    Dim fso As New FileSystemObject
     If fso.fileExists(filePath) Then
         fileExists = True
     Else
@@ -66,7 +82,7 @@ Sub createFolderPath(pathS As String)
         nPath = fso.GetParentFolderName(nPath)
     Loop
     subFName = existingPath
-    For i = subDirs.Count To 1 Step -1
+    For i = subDirs.count To 1 Step -1
         subFName = subFName & "\" & subDirs.Item(i)
         fso.CreateFolder subFName
     Next i
@@ -109,7 +125,7 @@ Function getFullFilePathsByPattern(fullFilePathPattern As String, Optional ifNot
             fileName = Dir
         Loop
         Dim fileCount As Long
-        fileCount = fileCollection.Count
+        fileCount = fileCollection.count
         If fileCount > 1 Then
             If ifMultipleFilesFoundRaiseError Then
                 Err.Raise vbObjectError + 2, "FileUtil.getFullFilePathsByPattern", "MultipleFileFoundWithPattern : " & vbNewLine & "File : '" & fullFileName & "' multiple files found"
@@ -120,25 +136,188 @@ Function getFullFilePathsByPattern(fullFilePathPattern As String, Optional ifNot
 
 End Function
 
-Function getSelectedFolders(Optional titleDialogBox As String = "Select folder", Optional allowMultipleSelect As Boolean = False) As Variant
+Function getSelectedFolders(Optional titleDialogBox As String = "Select folder", Optional doSelectMultiples As Boolean = False, Optional ifNoFolderSelectionRaiseError As Boolean = False) As FileDialogSelectedItems
     Dim selectedFolderList As Variant
     With Application.FileDialog(msoFileDialogFolderPicker)
         .Title = titleDialogBox
-        .allowMultiSelect = allowMultipleSelect
+        .allowMultiSelect = doSelectMultiples
         If .Show = -1 Then
             Set selectedFolderList = .SelectedItems
         End If
     End With
+    If ifNoFolderSelectionRaiseError Then
+        Err.Raise vbObjectError + 1015, "ArrayUtil_getSelectedFolders", "No folder selected, please select folder : '" & titleDialogBox & "'"
+    End If
     Set getSelectedFolders = selectedFolderList
 End Function
 
-Function getSelectedFolder(Optional titleDialogBox As String = "Select folder", Optional allowMultipleSelect As Boolean = False) As String
-    
-    Dim selectedFolders As Variant
+Function getSelectedFolder(Optional titleDialogBox As String = "Select folder", Optional doSelectMultiples As Boolean = False, Optional ifNoFolderSelectionRaiseError As Boolean = False) As String
     Dim selectedFolder As String
-    Set selectedFolders = getSelectedFolders(titleDialogBox, allowMultipleSelect)
-    selectedFolder = selectedFolders(1)
+    selectedFolder = getSelectedFolders(titleDialogBox, doSelectMultiples, ifNoFolderSelectionRaiseError)(1)
     getSelectedFolder = selectedFolder
+    
+End Function
+
+Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As Variant, _
+                                Optional concateFolderPath As Boolean = False) As Scripting.Dictionary
+    'It returns the dict
+    'Key: 'count' , Value --> total files count
+    'Key: 'items' , Value --> The 1D array of file names String
+    'FilePatterns --> return the file name of specified pattern
+    'if filePatterns not provided then --> search for all file names --> Array("*.*")
+    'if no any folder found then --> count:0, items: empty array
+    'concateFolderPath, if True then it concate folder path also with file name otherwise only file name
+    'if folderPath ='' then Err
+    
+    Dim fileName As String
+    Dim files As Collection
+    Dim attr As Long
+    Dim resultDict As Object
+    Dim totalCount As Long
+    Dim i As Long
+    
+    If IsMissing(filePatterns) Then
+        filePatterns = Array("*.*")
+    End If
+    
+    'Set resultDict = CreateObject("Scripting.Dictionary")
+    Set resultDict = New Scripting.Dictionary
+    
+    'Non Empty Validate input
+    If Trim(folderPath) = "" Then
+        Err.Raise vbObjectError + 1000, "FileUtility_GetFileNames", "Folder path cannot be empty."
+    End If
+    
+    ' Ensure folder path ends with "\"
+    If Right(folderPath, 1) <> "\" Then
+        folderPath = folderPath & "\"
+    End If
+    
+    ' Check if folder exists
+    On Error Resume Next
+    attr = GetAttr(folderPath)
+    If Err.Number <> 0 Or (attr And vbDirectory) = 0 Then
+        Err.Clear
+        On Error GoTo 0
+        Err.Raise vbObjectError + 1001, "FileUtility_GetFileNames", "Folder does not exist: " & folderPath
+    End If
+    On Error GoTo 0
+    
+    Dim fileColl As Collection
+    Set fileColl = New Collection
+'    totalCount = 0
+    
+    'Counting Files Count
+    ' Get first file
+    Dim ePattern As Variant
+    For Each ePattern In filePatterns
+        fileName = Dir(folderPath & ePattern)
+            
+        ' Loop through files
+        Do While fileName <> ""
+            If concateFolderPath Then
+                fileColl.Add folderPath & fileName
+            Else
+                fileColl.Add fileName
+            End If
+            
+            fileName = Dir
+        Loop
+    Next ePattern
+    totalCount = fileColl.count
+    If totalCount = 0 Then
+        resultDict.Add "count", 0
+        resultDict.Add "items", Array()
+        Set getFileNamesInsideFolder = resultDict
+        Exit Function
+    End If
+    
+    ' Allocate array
+    ReDim arr(1 To totalCount)
+    
+    ' Convert to array
+    ReDim arr(1 To totalCount)
+    For i = 1 To totalCount
+        arr(i) = fileColl(i)
+    Next i
+        
+    Dim d As Dictionary
+    resultDict.Add "count", totalCount
+    resultDict.Add "items", arr
+    Set getFileNamesInsideFolder = resultDict
+
+End Function
+
+Function getSubFoldersInsideFolder(folderPath As String, Optional includeSubfoldersRecursively As Boolean = False) As Scripting.Dictionary
+    
+    'It returns the dict
+    'Key: 'count' , Value --> total subfolders count
+    'Key: 'items' , Value --> The 1D array of sub-folders String
+    'if no any folder found then --> count:0, items: empty array
+    'if folderPath ='' then Err
+    
+    Dim resultDict As Scripting.Dictionary
+    Set resultDict = New Scripting.Dictionary
+    Dim col As Collection
+    Dim arr() As String
+    Dim i As Long
+    Dim attr As Long
+    Dim totalCount As Long
+    
+    Dim fso As FileSystemObject
+    Set fso = New FileSystemObject
+    ' Validate input
+    If Trim(folderPath) = "" Then
+        Err.Raise vbObjectError + 5000, "ArrayUtil_getAllSubFoldersInsideFolder", "Folder path cannot be empty."
+    End If
+    
+    ' Ensure trailing "\"
+    If Right(folderPath, 1) <> "\" Then folderPath = folderPath & "\"
+    
+    ' Check folder exists
+    On Error Resume Next
+    attr = GetAttr(folderPath)
+    If Err.Number <> 0 Or (attr And vbDirectory) = 0 Then
+        Err.Clear
+        On Error GoTo 0
+        Err.Raise vbObjectError + 5001, "ArrayUtil_getAllSubFoldersInsideFolders", "Folder does not exist."
+    End If
+    On Error GoTo 0
+            
+    Set col = New Collection
+    
+    If includeSubfoldersRecursively Then
+        ' Start recursion
+        TraverseFoldersCollection fso.GetFolder(folderPath), col
+    Else
+        Dim subFolder As Object
+        Dim fold As folder
+        Set fold = fso.GetFolder(folderPath)
+        For Each subFolder In fold.SubFolders
+            col.Add subFolder.Path
+        Next subFolder
+    End If
+    
+       
+    ' If no subfolders ? return empty array
+    If col.count = 0 Then
+        resultDict.Add "count", 0
+        resultDict.Add "items", Array()
+        Set getAllSubFoldersInsideFolders = resultDict
+        Exit Function
+    End If
+    
+    ' Convert collection ? array
+    ReDim arr(1 To col.count)
+    
+    For i = 1 To col.count
+        arr(i) = col(i)
+    Next i
+    
+    resultDict.Add "count", col.count
+    resultDict.Add "items", arr
+    Set getAllSubFoldersInsideFolder = resultDict
+    
 End Function
 
 
