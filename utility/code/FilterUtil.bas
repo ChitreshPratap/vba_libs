@@ -12,7 +12,7 @@ Function getVisibleRowsCount(filterRange_Data As Range) As Long
     Set visibleRange = filterRange_Data.SpecialCells(xlCellTypeVisible)
     
     For Each ar In visibleRange.Areas
-        visibleRowsCount = visibleRowsCount + ar.Rows.Count
+        visibleRowsCount = visibleRowsCount + ar.Rows.count
     Next ar
     getVisibleRowsCount = visibleRowsCount
     
@@ -44,7 +44,7 @@ Sub FilterRecordsByCriteriaRange(filterRange_Data As Range, criteriaRange As Ran
     Set wsFilterData = filterRange_Data.Parent
     Dim criteriaArr() As Variant
     
-    If criteriaRange.Cells.Count = 1 Then
+    If criteriaRange.Cells.count = 1 Then
         criteriaArr = Array(criteriaRange.value)
     Else
         criteriaArr = Application.Transpose(criteriaRange)
@@ -60,7 +60,7 @@ End Sub
 Sub deleteVisibleData(filterRange_Data As Range, Optional deleteHeader As Boolean = False)
 
     Dim visibleRowsCount As Long
-    visibleRowsCount = filterRange_Data.Columns(1).SpecialCells(xlCellTypeVisible).Cells.Count
+    visibleRowsCount = filterRange_Data.Columns(1).SpecialCells(xlCellTypeVisible).Cells.count
     
     If visibleRowsCount > 1 Then
         If deleteHeader Then

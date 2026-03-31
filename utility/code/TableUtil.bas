@@ -46,10 +46,10 @@ Function clearTable(qTable As ListObject) As Long
     Dim rowsInTable As Long
     Dim rowsDeleting As Long
     
-    rowsInTable = qTable.ListRows.Count
+    rowsInTable = qTable.ListRows.count
     
     If rowsInTable > 0 Then
-        rowsDeleting = qTable.DataBodyRange.Rows.Count
+        rowsDeleting = qTable.DataBodyRange.Rows.count
         qTable.DataBodyRange.Rows.Delete
     Else
         rowsDeleting = 0
@@ -65,11 +65,11 @@ Function refreshTable(qTable As ListObject) As Long
     Dim rowsInTable As Long
     Dim rowsRetrieved As Long
     
-    rowsInTable = qTable.ListRows.Count
+    rowsInTable = qTable.ListRows.count
     qTable.QueryTable.Refresh BackgroundQuery:=False
     
-    If qTable.ListRows.Count > 0 Then
-        rowsRetrieved = qTable.DataBodyRange.Rows.Count
+    If qTable.ListRows.count > 0 Then
+        rowsRetrieved = qTable.DataBodyRange.Rows.count
     Else
         rowsRetrieved = 0
     End If

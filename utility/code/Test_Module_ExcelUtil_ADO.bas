@@ -45,7 +45,7 @@ Sub example_getDataAsRecordSet_writeRecordSetToWorksheet()
 
     Set resultRecordSet = getDataAsRecordSet(conn, sqlQuery)
     rowCount = resultRecordSet.RecordCount
-    colCount = resultRecordSet.Fields.Count
+    colCount = resultRecordSet.Fields.count
     
     Debug.Print "Total Records Count : " & CStr(rowCount)
     Debug.Print "Total Records Count : " & CStr(colCount)

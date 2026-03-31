@@ -446,13 +446,13 @@ Function excludeRowsByIndex(arr As Variant, rowsToExclude As Variant) As Variant
     Next i
     
     ' If nothing to exclude ? return original array
-    If dict.Count = 0 Then
+    If dict.count = 0 Then
         excludeRowsByIndex = arr
         Exit Function
     End If
     
     ' Create output array (max possible size first)
-    ReDim outArr(1 To rowCount - dict.Count, 1 To colCount)
+    ReDim outArr(1 To rowCount - dict.count, 1 To colCount)
     
     outRow = 0
     
@@ -517,12 +517,12 @@ Function visibleRangeToArray(rng As Range) As Variant
         Exit Function
     End If
     
-    colCount = rng.Columns.Count
+    colCount = rng.Columns.count
     
     ' First pass: count total visible rows
     rowCount = 0
     For Each area In visRng.Areas
-        rowCount = rowCount + area.Rows.Count
+        rowCount = rowCount + area.Rows.count
     Next area
     
     If rowCount = 0 Then
@@ -541,7 +541,7 @@ Function visibleRangeToArray(rng As Range) As Variant
         arr = area.value
         
         ' Handle single cell area
-        If area.Cells.Count = 1 Then
+        If area.Cells.count = 1 Then
             outRow = outRow + 1
             outArr(outRow, 1) = arr
         Else
@@ -605,7 +605,7 @@ Function getUniqueRowsByColumns(arr As Variant, keyCols As Variant) As Variant
     Next i
     
     ' Create output array
-    ReDim outArr(1 To dict.Count, 1 To colCount)
+    ReDim outArr(1 To dict.count, 1 To colCount)
     
     ' Second pass: populate output
     outRow = 0
@@ -644,12 +644,12 @@ Function convertRangeToArraySafe(rng As Range) As Variant
     End If
     
     ' Check if range has no cells
-    If rng.Cells.Count = 0 Then
+    If rng.Cells.count = 0 Then
         Err.Raise vbObjectError + 1001, "ArrayUtil_convertRangeToArraySafe", "Input range has no cells"
     End If
     
     ' If single cell, convert to 2D array manually
-    If rng.Cells.Count = 1 Then
+    If rng.Cells.count = 1 Then
         ReDim arr(1 To 1, 1 To 1)
         arr(1, 1) = rng.value
         convertRangeToArraySafe = arr

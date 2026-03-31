@@ -23,7 +23,7 @@ Sub testQueries()
     For Each k In wbQueries
         Debug.Print k.Name
     Next k
-    Debug.Print wbQueries.Count
+    Debug.Print wbQueries.count
     Exit Sub
 handleError:
     MsgBox Err.Source & ": " & Err.Description, vbCritical + vbOKOnly, "Error"

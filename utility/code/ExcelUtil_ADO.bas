@@ -9,7 +9,7 @@ Sub writeRecordSetToWorksheet(dataRecordSet As Recordset, destinationRange As Ra
     
     If Not includeHeaders Then
         destinationRange.Offset(1, 0).CopyFromRecordset dataRecordSet
-        For colCount = 0 To dataRecordSet.Fields.Count - 1
+        For colCount = 0 To dataRecordSet.Fields.count - 1
             With dataRecordSet.Fields(colCount)
                 destinationRange.Offset(0, colCount).value = .Name
             End With

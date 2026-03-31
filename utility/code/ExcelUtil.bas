@@ -69,8 +69,8 @@ Function createWorksheet(wb As Workbook, sheetName As String, ifAlreadyExistsRai
         
     Else
         
-        wb.Worksheets.Add After:=wb.Worksheets(wb.Worksheets.Count)
-        Set wsSheet = wb.Worksheets(wb.Worksheets.Count)
+        wb.Worksheets.Add After:=wb.Worksheets(wb.Worksheets.count)
+        Set wsSheet = wb.Worksheets(wb.Worksheets.count)
         wsSheet.Name = sheetName
     End If
     

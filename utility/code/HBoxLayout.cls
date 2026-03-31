@@ -102,7 +102,7 @@ Public Sub Remove(indexOrName As Variant)
         mControls.Remove CLng(indexOrName)
     Else
         Dim i As Long
-        For i = mControls.Count To 1 Step -1
+        For i = mControls.count To 1 Step -1
             If mControls(i).Name = CStr(indexOrName) Then
                 mControls.Remove i
                 Exit Sub
@@ -116,8 +116,8 @@ Public Sub Clear()
     Set mControls = New Collection
 End Sub
 
-Public Function Count() As Long
-    Count = mControls.Count
+Public Function count() As Long
+    count = mControls.count
 End Function
 
 ' --- Core: Arrange controls inside the container (UserForm or Frame)
@@ -153,7 +153,7 @@ Public Sub Arrange(container As Object)
     
     ' Remove invisible or nothing controls from layout calculation
     totalWidth = 0
-    For i = 1 To mControls.Count
+    For i = 1 To mControls.count
         Set ctrl = mControls(i)
         If ctrl.Visible Then
             totalWidth = totalWidth + ctrl.Width
@@ -162,7 +162,7 @@ Public Sub Arrange(container As Object)
     ' Add spacing between visible controls
     Dim visibleCount As Long
     visibleCount = 0
-    For i = 1 To mControls.Count
+    For i = 1 To mControls.count
         If mControls(i).Visible Then visibleCount = visibleCount + 1
     Next i
     If visibleCount > 1 Then
@@ -179,7 +179,7 @@ Public Sub Arrange(container As Object)
     If availHeight < 0 Then availHeight = 0
     
     ' Arrange each visible control
-    For i = 1 To mControls.Count
+    For i = 1 To mControls.count
         Set ctrl = mControls(i)
         If ctrl.Visible Then
             ' Determine height to place control at (stretch if requested)
@@ -231,7 +231,7 @@ Public Sub CenterIn(container As Object)
     
     groupWidth = 0
     visibleCount = 0
-    For i = 1 To mControls.Count
+    For i = 1 To mControls.count
         Set ctrl = mControls(i)
         If ctrl.Visible Then
             groupWidth = groupWidth + ctrl.Width
