@@ -84,7 +84,6 @@ Sub exampleFillingFBL3NGLRangeSingleGL(session As Variant)
     
     Dim glRangeList As Range
     Dim glSingleList As Range
-    Dim glSingleList As Ranage
     Dim companyCodeList As Range
     Dim verticalPosition As Long
     Dim rowNumber As Long

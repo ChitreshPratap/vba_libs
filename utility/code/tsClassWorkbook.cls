@@ -39,7 +39,7 @@ Function getQueries() As Queries
     Dim queriesResult As Queries
     Set wb = Me.getWorkbook
     Set queriesResult = ExcelUtil.getQueries(wb)
-    getQueries = queriesResult
+    Set getQueries = queriesResult
     
 End Function
 

@@ -27,7 +27,7 @@ Sub deleteAllFilesFromFolder(folderPath As String)
         
     Dim fileCount As Long
     
-    fold = fso.GetFolder(folderPath)
+    Set fold = fso.GetFolder(folderPath)
     fileCount = fold.files.count
     
     For Each tFile In fold.files
