@@ -2,6 +2,44 @@ Attribute VB_Name = "ArrayUtil"
 Option Explicit
 Private Const moduleName As String = "ArrayUtil"
 
+Function getArrayDimension(arr As Variant) As Variant
+    'arr (Variant) - Input array (1D or 2D)
+    
+    'Returns : Array/Variant (1D array)
+            '(1) = Row Count
+            '(2) = Column Count
+    ' It returns row count and column count of an array
+    
+    'Errors:
+    'Raises error if input is not an array
+            
+    Dim result(1 To 2) As Long
+    Dim rowCount As Long
+    Dim columnCount As Long
+    
+    'Validate array
+    If Not IsArray(arr) Then
+        Err.Raise vbObjectError + 1000, moduleName & "_getDimension", "Input array is not an array."
+    End If
+    
+    On Error GoTo OneDimensional
+    ' Try 2D array
+    rowCount = UBound(arr, 1) - LBound(arr, 1) + 1
+    columnCount = UBound(arr, 2) - LBound(arr, 2) + 1
+
+    GoTo Success
+OneDimensional:
+    ' Handle 1D array
+    Err.Clear
+    rowCount = UBound(arr) - LBound(arr) + 1
+    columnCount = 1
+Success:
+    result(1) = rowCount
+    result(2) = columnCount
+    getArrayDimension = result
+    
+End Function
+
 Function to1DArray(inputArray As Variant) As Variant
     
     'inputArray : Array() it is two dimension array with single column only

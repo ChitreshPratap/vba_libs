@@ -2,6 +2,28 @@ Attribute VB_Name = "Test_Module_ArrayUtil"
 
 Option Explicit
 
+Sub example_getArrayDimension()
+    Dim arr As Variant
+    Dim sizeInfo As Variant
+    arr = ArrayUtil.convertRangeToArraySafe(Range("A1"))
+    sizeInfo = ArrayUtil.getArrayDimension(arr)
+    Debug.Print sizeInfo(1)
+    Debug.Print sizeInfo(2)
+    Debug.Print "---------------------"
+    arr = ArrayUtil.convertRangeToArraySafe(Range("A1:A10"))
+    sizeInfo = ArrayUtil.getArrayDimension(arr)
+    Debug.Print sizeInfo(1)
+    Debug.Print sizeInfo(2)
+    Debug.Print "---------------------"
+    arr = ArrayUtil.convertRangeToArraySafe(Range("A1:E10"))
+    arr = ArrayUtil.getColumnsFromArray(arr, Array(3))
+    sizeInfo = ArrayUtil.getArrayDimension(arr)
+    Debug.Print sizeInfo(1)
+    Debug.Print sizeInfo(2)
+    Debug.Print "---------------------"
+        
+End Sub
+
 Sub example_to1DArray()
     Dim rngData As Range
     Dim data As Variant
