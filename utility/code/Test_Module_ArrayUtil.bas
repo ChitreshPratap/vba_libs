@@ -2,7 +2,6 @@ Attribute VB_Name = "Test_Module_ArrayUtil"
 
 Option Explicit
 
-
 Sub example_to1DArray()
     Dim rngData As Range
     Dim data As Variant

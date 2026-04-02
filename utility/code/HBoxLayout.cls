@@ -155,7 +155,7 @@ Public Sub Arrange(container As Object)
     totalWidth = 0
     For i = 1 To mControls.count
         Set ctrl = mControls(i)
-        If ctrl.Visible Then
+        If ctrl.visible Then
             totalWidth = totalWidth + ctrl.Width
         End If
     Next i
@@ -163,7 +163,7 @@ Public Sub Arrange(container As Object)
     Dim visibleCount As Long
     visibleCount = 0
     For i = 1 To mControls.count
-        If mControls(i).Visible Then visibleCount = visibleCount + 1
+        If mControls(i).visible Then visibleCount = visibleCount + 1
     Next i
     If visibleCount > 1 Then
         totalWidth = totalWidth + (visibleCount - 1) * mSpacing
@@ -181,7 +181,7 @@ Public Sub Arrange(container As Object)
     ' Arrange each visible control
     For i = 1 To mControls.count
         Set ctrl = mControls(i)
-        If ctrl.Visible Then
+        If ctrl.visible Then
             ' Determine height to place control at (stretch if requested)
             If mStretchHeight Then
                 ctrlHeight = availHeight
@@ -233,7 +233,7 @@ Public Sub CenterIn(container As Object)
     visibleCount = 0
     For i = 1 To mControls.count
         Set ctrl = mControls(i)
-        If ctrl.Visible Then
+        If ctrl.visible Then
             groupWidth = groupWidth + ctrl.Width
             visibleCount = visibleCount + 1
         End If

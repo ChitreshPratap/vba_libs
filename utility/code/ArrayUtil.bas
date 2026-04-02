@@ -1,7 +1,13 @@
 Attribute VB_Name = "ArrayUtil"
 Option Explicit
+Private Const moduleName As String = "ArrayUtil"
 
 Function to1DArray(inputArray As Variant) As Variant
+    
+    'inputArray : Array() it is two dimension array with single column only
+    'Returns : Array(), returns 1D array with one dimension,
+    'If there are multiple column in inputArray then Raise Error
+    'It converts 2D array with single column (input Array) to 1D array
     
     On Error GoTo ErrorHandler
     
@@ -18,7 +24,7 @@ Function to1DArray(inputArray As Variant) As Variant
         Err.Raise vbObjectError + 1000, "ArrayUtil_to1DArray", "Input array is not an array."
     End If
     
-    ' Get dimensions
+    ' Get dimensions, totalRows and Colmns in array
     rowCount = UBound(inputArray, 1) - LBound(inputArray, 1) + 1
     colCount = UBound(inputArray, 2) - LBound(inputArray, 2) + 1
     
@@ -412,8 +418,11 @@ ErrorHandler:
 End Function
 
 Function excludeRowsByIndex(arr As Variant, rowsToExclude As Variant) As Variant
-    'It exclude the specified rows position from the array
-    
+    'arr : Array(), the source array in which need to remove specified rows
+    'rowsToExclude : Array(), 1D array of rows which need to be excluded from the source array (arr)
+    'Returns : Array(), the new array object which does not include the rowsToExclude
+    'It exclude the specified rows position from the source array and return new array
+        
     Dim dict As Object
     Dim i As Long, j As Long
     Dim rowCount As Long, colCount As Long
@@ -421,7 +430,7 @@ Function excludeRowsByIndex(arr As Variant, rowsToExclude As Variant) As Variant
     Dim outRow As Long
     
     On Error GoTo ErrorHandler
-    
+        
     ' Validate input
     If Not IsArray(arr) Then
         Err.Raise vbObjectError + 17000, "ArrayUtil_ExcludeRowsByIndex", "Input data is not an array"
@@ -492,6 +501,9 @@ End Function
 
 
 Function visibleRangeToArray(rng As Range) As Variant
+    
+    'rng : Range, entire range object in which only visible rows to be return as Array
+    'Returns : Array,
     'It returns the visible row from autofilter as an Array
     
     Dim visRng As Range, area As Range
@@ -568,6 +580,10 @@ End Function
 
 
 Function getUniqueRowsByColumns(arr As Variant, keyCols As Variant) As Variant
+    'arr: Array, the source array, the array from which unique value need to extract
+    'keyCols : Array, 1D array of columns which need to be considered to calculate unique values
+    'Returns : Array, Entire array of unique value of specified key columns
+    
     'It returns the unique rows, it consider the specified columns to evaluate unique value
     
     Dim dict As Object
@@ -632,6 +648,9 @@ End Function
 
 
 Function convertRangeToArraySafe(rng As Range) As Variant
+    'rng : Range, the range to be converted to array
+    'Returns : Array, output array
+    
     'It will convert the provided range object to array
     
     Dim arr As Variant
@@ -669,8 +688,12 @@ ErrorHandler:
 End Function
 
 Function writeArrayToRangeSafe(startCell As Range, arr As Variant) As Range
-    'It will write the provided array at the start cell address.
+    'startCell : Range, the starting position to write the array
+    'arr : Array, the array to write
+    'Returns : Range, the range in which array is written
     
+    'It will write the provided array at the start cell address and returns the range object
+        
     Dim numRows As Long
     Dim numCols As Long
     Dim ws As Worksheet
@@ -790,9 +813,12 @@ End Function
 
 
 Function getColumnsFromArray(arr As Variant, cols As Variant) As Variant
-    'It will return the array with columns specified in same order and with equal number of rows
-    'Cols is array of columns Eg. Array(3,4,1,2)
-
+    'arr: Array, The source array from which the specified column needs to be extract
+    'cols: Array (1D), array of column number which need to extract as seperate array, Eg. Array(3,4,1,2)
+        'If Array(3) --> It will return the 2D array with only single column, 3rd column of source array
+    'It will return the array(2D) with columns specified in same order and with equal number of rows
+    'as the source array
+    
     Dim i As Long, j As Long
     Dim rowCount As Long, colCount As Long
     Dim outArr() As Variant
