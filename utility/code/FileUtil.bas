@@ -136,26 +136,41 @@ Function getFullFilePathsByPattern(fullFilePathPattern As String, Optional ifNot
 
 End Function
 
-Function getSelectedFolders(Optional titleDialogBox As String = "Select folder", Optional doSelectMultiples As Boolean = False, Optional ifNoFolderSelectionRaiseError As Boolean = False) As FileDialogSelectedItems
+Function getSelectedFolder(Optional titleDialogBox As String = "Select folder", Optional ifNoFolderSelectionRaiseError As Boolean = False) As String
+    'titleDialogBox : String, the title box of the popup box
+    'ifNoFolderSelectionRaiseError : Boolean,
+    '   If True, Raise error If popup box is cancelled or no any folder is selected
+    '   if False, Return "", if no any folder is selected
+    'Returns : String, The selected folder path
+    
+    'It shows the popup box to select the folder and
+    'returns the selected folder path as String
+    'Note:
+    'This function not allow to select multiple folder.
+    'It only allow to select only single folder
+    
     Dim selectedFolderList As Variant
+    Dim selectedFolder As String
     With Application.FileDialog(msoFileDialogFolderPicker)
         .Title = titleDialogBox
-        .allowMultiSelect = doSelectMultiples
         If .Show = -1 Then
             Set selectedFolderList = .SelectedItems
+        Else
+            'Dialog is cancelled/Closed
+            If ifNoFolderSelectionRaiseError Then
+                Err.Raise vbObjectError + 1015, "ArrayUtil_getSelectedFolders", "No folder selected, please select folder : '" & titleDialogBox & "'"
+            Else
+                Set selectedFolderList = Nothing
+            End If
         End If
     End With
-    If ifNoFolderSelectionRaiseError Then
-        Err.Raise vbObjectError + 1015, "ArrayUtil_getSelectedFolders", "No folder selected, please select folder : '" & titleDialogBox & "'"
-    End If
-    Set getSelectedFolders = selectedFolderList
-End Function
-
-Function getSelectedFolder(Optional titleDialogBox As String = "Select folder", Optional doSelectMultiples As Boolean = False, Optional ifNoFolderSelectionRaiseError As Boolean = False) As String
-    Dim selectedFolder As String
-    selectedFolder = getSelectedFolders(titleDialogBox, doSelectMultiples, ifNoFolderSelectionRaiseError)(1)
-    getSelectedFolder = selectedFolder
     
+    If selectedFolderList Is Nothing Then
+        selectedFolder = ""
+    Else
+        selectedFolder = selectedFolderList(1)
+    End If
+    getSelectedFolder = selectedFolder
 End Function
 
 Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As Variant, _
@@ -203,8 +218,8 @@ Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As
     End If
     On Error GoTo 0
     
-    Dim fileColl As Collection
-    Set fileColl = New Collection
+    Dim fileColl As Dictionary
+    Set fileColl = New Dictionary
 '    totalCount = 0
     
     'Counting Files Count
@@ -215,16 +230,15 @@ Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As
             
         ' Loop through files
         Do While fileName <> ""
-            If concateFolderPath Then
-                fileColl.Add folderPath & fileName
-            Else
-                fileColl.Add fileName
+            If Not fileColl.Exists(fileName) Then
+                    fileColl.Add fileName, folderPath & fileName
             End If
-            
             fileName = Dir
         Loop
     Next ePattern
+    
     totalCount = fileColl.count
+    
     If totalCount = 0 Then
         resultDict.Add "count", 0
         resultDict.Add "items", Array()
@@ -237,10 +251,18 @@ Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As
     
     ' Convert to array
     ReDim arr(1 To totalCount)
-    For i = 1 To totalCount
-        arr(i) = fileColl(i)
-    Next i
-        
+    
+    i = 1
+    Dim ky As Variant
+    For Each ky In fileColl.Keys
+        If concateFolderPath Then
+            arr(i) = fileColl(ky)
+        Else
+            arr(i) = ky
+        End If
+        i = i + 1
+    Next ky
+            
     Dim d As Dictionary
     resultDict.Add "count", totalCount
     resultDict.Add "items", arr

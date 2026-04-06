@@ -1,5 +1,11 @@
 Attribute VB_Name = "Test_Module_RangeUtil"
 
+Sub example()
+    Dim udRange As Range
+    Set udRange = Range("i5:i14")
+    RangeUtil.convertToText udRange
+    
+End Sub
 
 
 Sub example_uniqueValues()

@@ -24,11 +24,12 @@ Sub example_getFileNamesInsideFolder()
     Dim t As Variant
     Dim files As Variant
     Dim folderPath As String
-    folderPath = "C:\Users\DELL\OneDrive\Documents"
+    folderPath = "C:\Users\DELL\Downloads\Test11"
     'Returns all files
     Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath)
+    
     'Returns only file names
-    Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath, Array("*.acc*", "*.pdf"))
+    Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath, Array("*.txt*", "*.txt", "*.ic*"), True)
     
     'Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath, Array("*.acc*", "*.pdf"), True)
     files = resultDict("items")
@@ -62,14 +63,16 @@ End Sub
 
 Sub example_getSelectedFolders()
     Dim fold As Variant
-    Set fold = FileUtil.getSelectedFolders(True, "Select Math Folder", True)
+    'Set fold = FileUtil.getSelectedFolders(True, "Select Math Folder", True)
+    Set fold = FileUtil.getSelectedFolders(True, "Select math folder", True)
     
 
 End Sub
 
 Sub example_getSelectedFolder()
     Dim fold As String
-    fold = FileUtil.getSelectedFolder("Select Math Folder", True, True)
+    fold = FileUtil.getSelectedFolder("Select Math Folder", False)
+    fold = FileUtil.getSelectedFolder("Select Math Folder", True)
     
 
 End Sub
