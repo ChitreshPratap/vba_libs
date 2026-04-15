@@ -83,6 +83,7 @@ Function getWorksheet(wb As Workbook, sheetName As String, ifNotExistsRaiseError
     sheetExists = ExcelUtil.worksheetExists(wb, sheetName, ifNotExistsRaiseError)
     If sheetExists Then
         Set getWorksheet = wb.Worksheets(sheetName)
+        Exit Function
     End If
         Set getWorksheet = Nothing
 End Function
