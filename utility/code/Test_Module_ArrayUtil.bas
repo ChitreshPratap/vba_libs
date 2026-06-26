@@ -152,4 +152,43 @@ Sub example_writeArrayToRangeSafe()
     Debug.Print outRange.Address
 End Sub
 
+Sub test_extractRowAs1DArray()
+    
+    Dim ws As Worksheet
+    Dim dRange As Range
+    Dim arrVisibleRows As Variant
+    Dim colHeaders As Variant
+    Set ws = ThisWorkbook.Worksheets("Sheet5")
+    Set dRange = ws.Range("D4:U22")
+    
+    arrVisibleRows = GetVisibleRowsAllColumns_AsArray(dRange)
+    colHeaders = extractRowAs_1DArray(arrVisibleRows, 1)
+
+End Sub
+
+Sub test_extractColAs1DArray()
+    
+    Dim ws As Worksheet
+    Dim dRange As Range
+    Dim arrVisibleRows As Variant
+    Dim colHeaders As Variant
+    Set ws = ThisWorkbook.Worksheets("Sheet5")
+    Set dRange = ws.Range("D4:U22")
+    
+    arrVisibleRows = GetVisibleRowsAllColumns_AsArray(dRange)
+    colHeaders = extractColumnAs_1DArray(arrVisibleRows, 1)
+
+End Sub
+
+Sub test_getVisibleRowsAllColumns_AsArray()
+    
+    Dim ws As Worksheet
+    Dim dRange As Range
+    Set ws = ThisWorkbook.Worksheets("Sheet5")
+    Set dRange = ws.Range("D4:U22")
+    
+    GetVisibleRowsAllColumns_AsArray dRange
+    
+
+End Sub
 

@@ -1,6 +1,134 @@
 Attribute VB_Name = "ArrayUtil"
 Option Explicit
 
+
+
+Function GetVisibleRowsAllColumns_AsArray(rng As Range) As Variant
+    'It will return only visible rows and all columns of defined range
+    
+    Dim totalRows As Long
+    Dim totalCols As Long
+    Dim visibleRowCount As Long
+    Dim r As Long, c As Long
+    Dim outRow As Long
+    Dim sourceData As Variant
+    Dim outArr() As Variant
+
+    totalRows = rng.Rows.count
+    totalCols = rng.Columns.count
+
+    ' Step 1: Count visible rows to size our final array
+    visibleRowCount = 0
+    For r = 1 To totalRows
+        If Not rng.Rows(r).Hidden Then
+            visibleRowCount = visibleRowCount + 1
+        End If
+    Next r
+
+    ' Edge Case: If no rows are visible, return Empty
+    If visibleRowCount = 0 Then
+        GetVisibleRowsAllColumns_AsArray = Empty
+        Exit Function
+    End If
+
+    ' Step 2: Dimension the output array (1-based to match standard Excel arrays)
+    ReDim outArr(1 To visibleRowCount, 1 To totalCols)
+
+    ' Step 3: Load the entire range into a memory array for maximum speed
+    If totalRows = 1 And totalCols = 1 Then
+        ReDim sourceData(1 To 1, 1 To 1)
+        sourceData(1, 1) = rng.value
+    Else
+        sourceData = rng.value
+    End If
+
+    ' Step 4: Populate the output array
+    ' We loop through rows checking visibility, but pull data from the fast memory array
+    outRow = 1
+    For r = 1 To totalRows
+        If Not rng.Rows(r).Hidden Then
+            ' If the row is visible, copy ALL columns into the new array
+            For c = 1 To totalCols
+                outArr(outRow, c) = sourceData(r, c)
+            Next c
+            outRow = outRow + 1 ' Move to the next slot in the output array
+        End If
+    Next r
+
+    ' Step 5: Return the populated 2D array
+    GetVisibleRowsAllColumns_AsArray = outArr
+    
+End Function
+
+
+Function extractColumnAs_1DArray(arr As Variant, colIndex As Long) As Variant
+    
+    Dim i As Long
+    Dim lowerRow As Long
+    Dim upperRow As Long
+    Dim result() As Variant
+    
+    ' 1. Check if the input is actually an array
+    If Not IsArray(arr) Then
+        extractColumnAs_1DArray = Empty
+        Exit Function
+    End If
+    
+    ' 2. Check if the requested column is within bounds
+    If colIndex < LBound(arr, 2) Or colIndex > UBound(arr, 2) Then
+        extractColumnAs_1DArray = Empty
+        Exit Function
+    End If
+    
+    ' 3. Get the bounds of the rows
+    lowerRow = LBound(arr, 1)
+    upperRow = UBound(arr, 1)
+    
+    ' 4. Dimension the 1D output array to hold all 100,000+ items
+    ReDim result(lowerRow To upperRow)
+    
+    ' 5. Loop through the rows in memory (Lightning fast)
+    For i = lowerRow To upperRow
+        result(i) = arr(i, colIndex)
+    Next i
+    
+    ' 6. Return the perfectly sized 1D array
+    extractColumnAs_1DArray = result
+End Function
+
+Function extractRowAs_1DArray(arr As Variant, rowIndex As Long) As Variant
+    Dim c As Long
+    Dim lowerCol As Long
+    Dim upperCol As Long
+    Dim result() As Variant
+    
+    ' 1. Check if the input is actually an array
+    If Not IsArray(arr) Then
+        extractRowAs_1DArray = Empty
+        Exit Function
+    End If
+    
+    ' 2. Check if the requested row is within bounds
+    If rowIndex < LBound(arr, 1) Or rowIndex > UBound(arr, 1) Then
+        extractRowAs_1DArray = Empty
+        Exit Function
+    End If
+    
+    ' 3. Get the bounds of the columns (2nd dimension)
+    lowerCol = LBound(arr, 2)
+    upperCol = UBound(arr, 2)
+    
+    ' 4. Dimension the 1D output array to hold the row's columns
+    ReDim result(lowerCol To upperCol)
+    
+    ' 5. Loop through the columns in memory (Executes instantly)
+    For c = lowerCol To upperCol
+        result(c) = arr(rowIndex, c)
+    Next c
+    
+    ' 6. Return the safely extracted 1D array
+    extractRowAs_1DArray = result
+End Function
 Function to1DArray(inputArray As Variant) As Variant
     
     On Error GoTo ErrorHandler
@@ -493,6 +621,9 @@ End Function
 
 Function visibleRangeToArray(rng As Range) As Variant
     'It returns the visible row from autofilter as an Array
+    
+    'It will work if the range has only hidden rows.
+    'If columns are hidden this function will not work as expected.
     
     Dim visRng As Range, area As Range
     Dim arr As Variant, outArr() As Variant
