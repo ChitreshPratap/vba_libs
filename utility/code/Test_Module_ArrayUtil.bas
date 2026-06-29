@@ -192,3 +192,31 @@ Sub test_getVisibleRowsAllColumns_AsArray()
 
 End Sub
 
+Sub testHJoin()
+    
+    Dim r As Range
+    Dim arr As Variant
+    Dim arr2, arr3, arrBlanks, arr4, arr5, arrIdent
+    Dim n As Long, i As Long
+    Set r = Range("D4:U22")
+    
+    arr = ArrayUtil.convertRangeToArraySafe(r)
+    arr2 = ArrayUtil.convertRangeToArraySafe(Range("Z4:AB22"))
+    arr3 = hJoin(arr, arr2)
+    
+    'Appending Blank column
+    n = UBound(arr3, 1) - LBound(arr3, 1) + 1
+    ReDim blanks(1 To n, 1 To 1)
+    
+    arr4 = hJoin(arr3, blanks)
+    
+    
+    'Appending identity column
+    ReDim arrIdent(1 To n, 1 To 1)
+    For i = LBound(arr3, 1) To n
+        arrIdent(i, 1) = i
+    Next i
+    
+    arr5 = hJoin(arr4, arrIdent)
+    
+End Sub

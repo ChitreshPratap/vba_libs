@@ -1,6 +1,100 @@
 Attribute VB_Name = "ArrayUtil"
 Option Explicit
 
+' Joins two arrays side by side into one 2D array.
+' Each input may be 1D or 2D. A 1D array is treated as a single column.
+' Both arrays must have the same number of rows.
+' Result is always a 1-based 2D array.
+Public Function hJoin(ByVal arr1 As Variant, ByVal arr2 As Variant) As Variant
+    
+    Dim r1 As Long, c1 As Long, r2 As Long, c2 As Long
+    Dim lr1 As Long, lc1 As Long, lr2 As Long, lc2 As Long
+    Dim dims1 As Integer, dims2 As Integer
+    Dim result() As Variant
+    Dim i As Long, j As Long
+
+    ' --- Validate inputs are arrays ---
+    If Not IsArray(arr1) Then Err.Raise vbObjectError + 500, "HJoin", "First argument is not an array."
+    If Not IsArray(arr2) Then Err.Raise vbObjectError + 500, "HJoin", "Second argument is not an array."
+
+    ' --- Determine number of dimensions ---
+    dims1 = arrayDims(arr1)
+    dims2 = arrayDims(arr2)
+
+    If dims1 = 0 Then Err.Raise vbObjectError + 500, "HJoin", "First array is empty or not initialized."
+    If dims2 = 0 Then Err.Raise vbObjectError + 500, "HJoin", "Second array is empty or not initialized."
+    If dims1 > 2 Then Err.Raise vbObjectError + 500, "HJoin", "First array has more than 2 dimensions."
+    If dims2 > 2 Then Err.Raise vbObjectError + 500, "HJoin", "Second array has more than 2 dimensions."
+
+    ' --- Row/col bounds for array 1 ---
+    If dims1 = 1 Then
+        lr1 = LBound(arr1): r1 = UBound(arr1) - lr1 + 1
+        lc1 = 0: c1 = 1                              ' 1D = one column
+    Else
+        lr1 = LBound(arr1, 1): r1 = UBound(arr1, 1) - lr1 + 1
+        lc1 = LBound(arr1, 2): c1 = UBound(arr1, 2) - lc1 + 1
+    End If
+
+    ' --- Row/col bounds for array 2 ---
+    If dims2 = 1 Then
+        lr2 = LBound(arr2): r2 = UBound(arr2) - lr2 + 1
+        lc2 = 0: c2 = 1
+    Else
+        lr2 = LBound(arr2, 1): r2 = UBound(arr2, 1) - lr2 + 1
+        lc2 = LBound(arr2, 2): c2 = UBound(arr2, 2) - lc2 + 1
+    End If
+
+    ' --- Guard against empty / mismatched rows ---
+    If r1 < 1 Then Err.Raise vbObjectError + 500, "HJoin", "First array has no rows."
+    If r2 < 1 Then Err.Raise vbObjectError + 500, "HJoin", "Second array has no rows."
+    
+    If r1 <> r2 Then
+        Err.Raise vbObjectError + 500, "HJoin", _
+            "Row count mismatch: array1 has " & r1 & " rows, array2 has " & r2 & " rows."
+    End If
+
+    ' --- Build result ---
+    ReDim result(1 To r1, 1 To c1 + c2)
+
+    ' Copy array 1 into the left block
+    For i = 1 To r1
+        If dims1 = 1 Then
+            result(i, 1) = arr1(lr1 + i - 1)
+        Else
+            For j = 1 To c1
+                result(i, j) = arr1(lr1 + i - 1, lc1 + j - 1)
+            Next j
+        End If
+    Next i
+
+    ' Copy array 2 into the right block (offset by c1 columns)
+    For i = 1 To r2
+        If dims2 = 1 Then
+            result(i, c1 + 1) = arr2(lr2 + i - 1)
+        Else
+            For j = 1 To c2
+                result(i, c1 + j) = arr2(lr2 + i - 1, lc2 + j - 1)
+            Next j
+        End If
+    Next i
+
+    hJoin = result
+End Function
+
+' Returns the number of dimensions of an array (0 if uninitialized).
+Private Function arrayDims(ByVal arr As Variant) As Integer
+    Dim i As Integer, t As Long
+    On Error GoTo Done
+    If Not IsArray(arr) Then arrayDims = 0: Exit Function
+    Do
+        i = i + 1
+        t = UBound(arr, i)      ' errors once i exceeds the real dimension count
+    Loop
+Done:
+    arrayDims = i - 1
+End Function
+
+
 
 
 Function GetVisibleRowsAllColumns_AsArray(rng As Range) As Variant
@@ -764,6 +858,8 @@ End Function
 
 Function convertRangeToArraySafe(rng As Range) As Variant
     'It will convert the provided range object to array
+    'It does not ignore hidden rows/column, it reads every row/column
+    'no matter hidden or not
     
     Dim arr As Variant
     
