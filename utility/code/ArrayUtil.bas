@@ -1,6 +1,86 @@
 Attribute VB_Name = "ArrayUtil"
 Option Explicit
 
+Option Explicit
+
+' Joins two arrays one on top of the other into one 2D array.
+' Each input may be 1D or 2D. A 1D array is treated as a single row.
+' Both arrays must have the same number of columns.
+' Result is always a 1-based 2D array.
+Public Function VJoin(ByVal arr1 As Variant, ByVal arr2 As Variant) As Variant
+    Dim r1 As Long, c1 As Long, r2 As Long, c2 As Long
+    Dim lr1 As Long, lc1 As Long, lr2 As Long, lc2 As Long
+    Dim dims1 As Integer, dims2 As Integer
+    Dim result() As Variant
+    Dim i As Long, j As Long
+
+    ' --- Validate inputs are arrays ---
+    If Not IsArray(arr1) Then Err.Raise vbObjectError + 500, "VJoin", "First argument is not an array."
+    If Not IsArray(arr2) Then Err.Raise vbObjectError + 500, "VJoin", "Second argument is not an array."
+
+    ' --- Determine number of dimensions ---
+    dims1 = ArrayDims(arr1)
+    dims2 = ArrayDims(arr2)
+
+    If dims1 = 0 Then Err.Raise vbObjectError + 500, "VJoin", "First array is empty or not initialized."
+    If dims2 = 0 Then Err.Raise vbObjectError + 500, "VJoin", "Second array is empty or not initialized."
+    If dims1 > 2 Then Err.Raise vbObjectError + 500, "VJoin", "First array has more than 2 dimensions."
+    If dims2 > 2 Then Err.Raise vbObjectError + 500, "VJoin", "Second array has more than 2 dimensions."
+
+    ' --- Row/col bounds for array 1 ---
+    If dims1 = 1 Then
+        lc1 = LBound(arr1): c1 = UBound(arr1) - lc1 + 1
+        lr1 = 0: r1 = 1                              ' 1D = one row
+    Else
+        lr1 = LBound(arr1, 1): r1 = UBound(arr1, 1) - lr1 + 1
+        lc1 = LBound(arr1, 2): c1 = UBound(arr1, 2) - lc1 + 1
+    End If
+
+    ' --- Row/col bounds for array 2 ---
+    If dims2 = 1 Then
+        lc2 = LBound(arr2): c2 = UBound(arr2) - lc2 + 1
+        lr2 = 0: r2 = 1
+    Else
+        lr2 = LBound(arr2, 1): r2 = UBound(arr2, 1) - lr2 + 1
+        lc2 = LBound(arr2, 2): c2 = UBound(arr2, 2) - lc2 + 1
+    End If
+
+    ' --- Guard against empty / mismatched columns ---
+    If c1 < 1 Then Err.Raise 5, "VJoin", "First array has no columns."
+    If c2 < 1 Then Err.Raise 5, "VJoin", "Second array has no columns."
+    If c1 <> c2 Then
+        Err.Raise vbObjectError + 500, "VJoin", _
+            "Column count mismatch: array1 has " & c1 & " columns, array2 has " & c2 & " columns."
+    End If
+
+    ' --- Build result ---
+    ReDim result(1 To r1 + r2, 1 To c1)
+
+    ' Copy array 1 into the top block
+    For j = 1 To c1
+        If dims1 = 1 Then
+            result(1, j) = arr1(lc1 + j - 1)
+        Else
+            For i = 1 To r1
+                result(i, j) = arr1(lr1 + i - 1, lc1 + j - 1)
+            Next i
+        End If
+    Next j
+
+    ' Copy array 2 into the bottom block (offset by r1 rows)
+    For j = 1 To c2
+        If dims2 = 1 Then
+            result(r1 + 1, j) = arr2(lc2 + j - 1)
+        Else
+            For i = 1 To r2
+                result(r1 + i, j) = arr2(lr2 + i - 1, lc2 + j - 1)
+            Next i
+        End If
+    Next j
+
+    VJoin = result
+End Function
+
 ' Joins two arrays side by side into one 2D array.
 ' Each input may be 1D or 2D. A 1D array is treated as a single column.
 ' Both arrays must have the same number of rows.
@@ -18,8 +98,8 @@ Public Function hJoin(ByVal arr1 As Variant, ByVal arr2 As Variant) As Variant
     If Not IsArray(arr2) Then Err.Raise vbObjectError + 500, "HJoin", "Second argument is not an array."
 
     ' --- Determine number of dimensions ---
-    dims1 = arrayDims(arr1)
-    dims2 = arrayDims(arr2)
+    dims1 = ArrayDims(arr1)
+    dims2 = ArrayDims(arr2)
 
     If dims1 = 0 Then Err.Raise vbObjectError + 500, "HJoin", "First array is empty or not initialized."
     If dims2 = 0 Then Err.Raise vbObjectError + 500, "HJoin", "Second array is empty or not initialized."
@@ -82,16 +162,16 @@ Public Function hJoin(ByVal arr1 As Variant, ByVal arr2 As Variant) As Variant
 End Function
 
 ' Returns the number of dimensions of an array (0 if uninitialized).
-Private Function arrayDims(ByVal arr As Variant) As Integer
+Private Function ArrayDims(ByVal arr As Variant) As Integer
     Dim i As Integer, t As Long
     On Error GoTo Done
-    If Not IsArray(arr) Then arrayDims = 0: Exit Function
+    If Not IsArray(arr) Then ArrayDims = 0: Exit Function
     Do
         i = i + 1
         t = UBound(arr, i)      ' errors once i exceeds the real dimension count
     Loop
 Done:
-    arrayDims = i - 1
+    ArrayDims = i - 1
 End Function
 
 
