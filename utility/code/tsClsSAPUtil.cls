@@ -75,7 +75,7 @@ Sub saveWorkbook1()
     Dim xlWB As Workbook
     Dim xlApp As Excel.Application
     Set xlApp = GetObject(, "Excel.application")
-    Set xlWB = xlApp.Workbooks.Item("Worksheet in Basis (1)")
+    Set xlWB = xlApp.Workbooks.item("Worksheet in Basis (1)")
     xlWB.SaveAs "Save.xlsx"
     
 End Sub
@@ -95,11 +95,11 @@ Sub exampleFillingFBL3NGLRangeSingleGL(session As Variant)
         
         For Each tempRangeGL In glRangeList
             If rowNumber = 1 Then
-                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1,0]").Text = CStr(tempRangeGL.value)
-                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[2,0]").Text = CStr(tempRangeGL.Offset(0, 1).value)
+                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1,0]").Text = CStr(tempRangeGL.Value)
+                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[2,0]").Text = CStr(tempRangeGL.Offset(0, 1).Value)
             Else
-                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1," & CStr(1) & "]").Text = CStr(tempRangeGL.value)
-                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[2," & CStr(1) & "]").Text = CStr(tempRangeGL.Offset(0, 1).value)
+                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1," & CStr(1) & "]").Text = CStr(tempRangeGL.Value)
+                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[2," & CStr(1) & "]").Text = CStr(tempRangeGL.Offset(0, 1).Value)
                 session.FindById("wnd[1]/usr/tabsTAB").verticalScrollBar.Position = verticalPosition
                 verticalPosition = verticalPosition + 1
             End If
@@ -115,9 +115,9 @@ Sub exampleFillingFBL3NGLRangeSingleGL(session As Variant)
         For Each tempSingleGL In glSingleList
             
             If rowNumber = 1 Then
-                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1,0]").Text = CStr(tempSingleGL.value)
+                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1,0]").Text = CStr(tempSingleGL.Value)
             Else
-                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1," & CStr(1) & "]").Text = CStr(tempSingleGL.value)
+                session.FindById("wnd[1]/usr/tabsTAB/ctxtRSCEL-ILOW_I[1," & CStr(1) & "]").Text = CStr(tempSingleGL.Value)
                 session.FindById("wnd[1]/usr/tabsTAB").verticalScrollBar.Position = verticalPosition
                 verticalPosition = verticalPosition + 1
             End If

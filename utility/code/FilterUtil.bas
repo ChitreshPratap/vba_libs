@@ -45,7 +45,7 @@ Sub FilterRecordsByCriteriaRange(filterRange_Data As Range, criteriaRange As Ran
     Dim criteriaArr() As Variant
     
     If criteriaRange.Cells.count = 1 Then
-        criteriaArr = Array(criteriaRange.value)
+        criteriaArr = Array(criteriaRange.Value)
     Else
         criteriaArr = Application.Transpose(criteriaRange)
     End If

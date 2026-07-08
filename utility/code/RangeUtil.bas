@@ -23,8 +23,8 @@ Function getUniqueValues(udRange As Range) As Dictionary
     Dim tempRange As Range
     
     For Each tempRange In udRange
-        If Not dictUniqueValues.Exists(CStr(tempRange.value)) And tempRange <> "" Then
-            dictUniqueValues.Add CStr(tempRange.value), Nothing
+        If Not dictUniqueValues.Exists(CStr(tempRange.Value)) And tempRange <> "" Then
+            dictUniqueValues.Add CStr(tempRange.Value), Nothing
         End If
     Next tempRange
     Set getUniqueValues = dictUniqueValues

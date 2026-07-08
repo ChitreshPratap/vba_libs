@@ -18,7 +18,7 @@ Private Sub TraverseFoldersCollection(ByVal folder As Object, _
 End Sub
 
 
-Sub deleteAllFilesFromFolder(folderPath As String)
+Sub deleteAllFilesFromFolder(FolderPath As String)
     
     Dim fso As FileSystemObject
     Dim fold As folder
@@ -27,7 +27,7 @@ Sub deleteAllFilesFromFolder(folderPath As String)
         
     Dim fileCount As Long
     
-    fold = fso.GetFolder(folderPath)
+    fold = fso.GetFolder(FolderPath)
     fileCount = fold.files.count
     
     For Each tFile In fold.files
@@ -40,14 +40,14 @@ Sub deleteAllFilesFromFolder(folderPath As String)
     
 End Sub
 
-Function fileExists(filePath As String, ifNotExistsRaiseError As Boolean) As Boolean
+Function fileExists(FilePath As String, ifNotExistsRaiseError As Boolean) As Boolean
     
     Dim fso As New FileSystemObject
-    If fso.fileExists(filePath) Then
+    If fso.fileExists(FilePath) Then
         fileExists = True
     Else
         If ifNotExistsRaiseError Then
-            Err.Raise vbObjectError + 2, "FileUtil.fileExists", "FileNotFoundError : " & vbNewLine & "File : '" & filePath & "' not found"
+            Err.Raise vbObjectError + 2, "FileUtil.fileExists", "FileNotFoundError : " & vbNewLine & "File : '" & FilePath & "' not found"
         Else
             fileExists = False
         End If
@@ -83,7 +83,7 @@ Sub createFolderPath(pathS As String)
     Loop
     subFName = existingPath
     For i = subDirs.count To 1 Step -1
-        subFName = subFName & "\" & subDirs.Item(i)
+        subFName = subFName & "\" & subDirs.item(i)
         fso.CreateFolder subFName
     Next i
 
@@ -158,7 +158,7 @@ Function getSelectedFolder(Optional titleDialogBox As String = "Select folder", 
     
 End Function
 
-Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As Variant, _
+Function getFileNamesInsideFolder(FolderPath As String, Optional filePatterns As Variant, _
                                 Optional concateFolderPath As Boolean = False) As Scripting.Dictionary
     'It returns the dict
     'Key: 'count' , Value --> total files count
@@ -184,22 +184,22 @@ Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As
     Set resultDict = New Scripting.Dictionary
     
     'Non Empty Validate input
-    If Trim(folderPath) = "" Then
+    If Trim(FolderPath) = "" Then
         Err.Raise vbObjectError + 1000, "FileUtility_GetFileNames", "Folder path cannot be empty."
     End If
     
     ' Ensure folder path ends with "\"
-    If Right(folderPath, 1) <> "\" Then
-        folderPath = folderPath & "\"
+    If Right(FolderPath, 1) <> "\" Then
+        FolderPath = FolderPath & "\"
     End If
     
     ' Check if folder exists
     On Error Resume Next
-    attr = GetAttr(folderPath)
+    attr = GetAttr(FolderPath)
     If Err.Number <> 0 Or (attr And vbDirectory) = 0 Then
         Err.Clear
         On Error GoTo 0
-        Err.Raise vbObjectError + 1001, "FileUtility_GetFileNames", "Folder does not exist: " & folderPath
+        Err.Raise vbObjectError + 1001, "FileUtility_GetFileNames", "Folder does not exist: " & FolderPath
     End If
     On Error GoTo 0
     
@@ -211,12 +211,12 @@ Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As
     ' Get first file
     Dim ePattern As Variant
     For Each ePattern In filePatterns
-        fileName = Dir(folderPath & ePattern)
+        fileName = Dir(FolderPath & ePattern)
             
         ' Loop through files
         Do While fileName <> ""
             If concateFolderPath Then
-                fileColl.Add folderPath & fileName
+                fileColl.Add FolderPath & fileName
             Else
                 fileColl.Add fileName
             End If
@@ -248,7 +248,7 @@ Function getFileNamesInsideFolder(folderPath As String, Optional filePatterns As
 
 End Function
 
-Function getSubFoldersInsideFolder(folderPath As String, Optional includeSubfoldersRecursively As Boolean = False) As Scripting.Dictionary
+Function getSubFoldersInsideFolder(FolderPath As String, Optional includeSubfoldersRecursively As Boolean = False) As Scripting.Dictionary
     
     'It returns the dict
     'Key: 'count' , Value --> total subfolders count
@@ -267,16 +267,16 @@ Function getSubFoldersInsideFolder(folderPath As String, Optional includeSubfold
     Dim fso As FileSystemObject
     Set fso = New FileSystemObject
     ' Validate input
-    If Trim(folderPath) = "" Then
+    If Trim(FolderPath) = "" Then
         Err.Raise vbObjectError + 5000, "ArrayUtil_getAllSubFoldersInsideFolder", "Folder path cannot be empty."
     End If
     
     ' Ensure trailing "\"
-    If Right(folderPath, 1) <> "\" Then folderPath = folderPath & "\"
+    If Right(FolderPath, 1) <> "\" Then FolderPath = FolderPath & "\"
     
     ' Check folder exists
     On Error Resume Next
-    attr = GetAttr(folderPath)
+    attr = GetAttr(FolderPath)
     If Err.Number <> 0 Or (attr And vbDirectory) = 0 Then
         Err.Clear
         On Error GoTo 0
@@ -288,11 +288,11 @@ Function getSubFoldersInsideFolder(folderPath As String, Optional includeSubfold
     
     If includeSubfoldersRecursively Then
         ' Start recursion
-        TraverseFoldersCollection fso.GetFolder(folderPath), col
+        TraverseFoldersCollection fso.GetFolder(FolderPath), col
     Else
         Dim subFolder As Object
         Dim fold As folder
-        Set fold = fso.GetFolder(folderPath)
+        Set fold = fso.GetFolder(FolderPath)
         For Each subFolder In fold.SubFolders
             col.Add subFolder.Path
         Next subFolder

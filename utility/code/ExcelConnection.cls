@@ -14,8 +14,8 @@ Public Sub Class_Initialize()
     Set var_conn = New ADODB.Connection
 End Sub
 
-Public Property Let excelDBFileName(value As String)
-    var_excelFileName = value
+Public Property Let excelDBFileName(Value As String)
+    var_excelFileName = Value
 End Property
 
 Public Property Get excelDBFileName() As String

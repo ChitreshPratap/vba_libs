@@ -5,11 +5,11 @@ Sub example_getSubFoldersInsideFolder()
     Dim resultDict As Object
     Dim t As Variant
     Dim files As Variant
-    Dim folderPath As String
-    folderPath = "C:\Users\DELL\OneDrive\Documents"
+    Dim FolderPath As String
+    FolderPath = "C:\Users\DELL\OneDrive\Documents"
     
     'Return folder inside folder also
-    Set resultDict = FileUtil.getSubFoldersInsideFolder(folderPath, True)
+    Set resultDict = FileUtil.getSubFoldersInsideFolder(FolderPath, True)
     
     'Return direct folders
    ' Set resultDict = FileUtil.getSubFoldersInsideFolder(folderPath, False)
@@ -23,12 +23,12 @@ Sub example_getFileNamesInsideFolder()
     Dim resultDict As Object
     Dim t As Variant
     Dim files As Variant
-    Dim folderPath As String
-    folderPath = "C:\Users\DELL\OneDrive\Documents"
+    Dim FolderPath As String
+    FolderPath = "C:\Users\DELL\OneDrive\Documents"
     'Returns all files
-    Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath)
+    Set resultDict = FileUtil.getFileNamesInsideFolder(FolderPath)
     'Returns only file names
-    Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath, Array("*.acc*", "*.pdf"))
+    Set resultDict = FileUtil.getFileNamesInsideFolder(FolderPath, Array("*.acc*", "*.pdf"))
     
     'Set resultDict = FileUtil.getFileNamesInsideFolder(folderPath, Array("*.acc*", "*.pdf"), True)
     files = resultDict("items")

@@ -12,7 +12,7 @@ Sub testGetColumn()
     Debug.Print lc.Name
     Exit Sub
 
-errHandler:
+ErrHandler:
     MsgBox Err.Source & ":" & Err.Description, vbOKOnly + vbCritical, "Error"
     
 End Sub
@@ -26,7 +26,7 @@ Sub getTableByName()
         Set lo = TableUtil.getTableByName(ws, "Table2")
         Debug.Print lo.Name
     Exit Sub
-errHandler:
+ErrHandler:
     MsgBox Err.Source & ":" & Err.Description, vbOKOnly + vbCritical, "Error"
 
 End Sub

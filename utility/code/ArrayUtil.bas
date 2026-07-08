@@ -1,8 +1,6 @@
 Attribute VB_Name = "ArrayUtil"
 Option Explicit
 
-Option Explicit
-
 ' Joins two arrays one on top of the other into one 2D array.
 ' Each input may be 1D or 2D. A 1D array is treated as a single row.
 ' Both arrays must have the same number of columns.
@@ -211,9 +209,9 @@ Function GetVisibleRowsAllColumns_AsArray(rng As Range) As Variant
     ' Step 3: Load the entire range into a memory array for maximum speed
     If totalRows = 1 And totalCols = 1 Then
         ReDim sourceData(1 To 1, 1 To 1)
-        sourceData(1, 1) = rng.value
+        sourceData(1, 1) = rng.Value
     Else
-        sourceData = rng.value
+        sourceData = rng.Value
     End If
 
     ' Step 4: Populate the output array
@@ -843,7 +841,7 @@ Function visibleRangeToArray(rng As Range) As Variant
     
     For Each area In visRng.Areas
         
-        arr = area.value
+        arr = area.Value
         
         ' Handle single cell area
         If area.Cells.count = 1 Then
@@ -958,13 +956,13 @@ Function convertRangeToArraySafe(rng As Range) As Variant
     ' If single cell, convert to 2D array manually
     If rng.Cells.count = 1 Then
         ReDim arr(1 To 1, 1 To 1)
-        arr(1, 1) = rng.value
+        arr(1, 1) = rng.Value
         convertRangeToArraySafe = arr
         Exit Function
     End If
     
     ' Convert range to array
-    arr = rng.value
+    arr = rng.Value
     
     convertRangeToArraySafe = arr
     Exit Function
@@ -1010,7 +1008,7 @@ Function writeArrayToRangeSafe(startCell As Range, arr As Variant) As Range
     ' Write array to sheet
     Set ws = startCell.Parent
     Set outputRange = ws.Range(startCell.Address).Resize(numRows, numCols)
-    outputRange.value = arr
+    outputRange.Value = arr
     
     Set writeArrayToRangeSafe = outputRange
     Exit Function
