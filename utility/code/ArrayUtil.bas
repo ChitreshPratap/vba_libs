@@ -1161,8 +1161,8 @@ End Function
 ' Parameters:
 '   SourceArr   - The input array, 1D or 2D (1-based, as from Range.Value/Value2)
 '   AddHeader   - True  = first row of the new column holds HeaderName,
-'                         sequence numbering (1,2,3...) starts from row 2
-'                 False = sequence numbering (1,2,3...) starts from row 1
+'                         sequence numbering starts at 2 (2,3,4...) from row 2
+'                 False = sequence numbering starts at 1 (1,2,3...) from row 1
 '   HeaderName  - Text to use as the header when AddHeader = True
 '                 (ignored when AddHeader = False)
 '
@@ -1191,7 +1191,6 @@ End Function
 '      This is about as efficient as this operation gets without leaving
 '      VBA (e.g. writing formulas to the sheet instead of an array).
 '===========================================================================
-
 Function addColumn_Sequence(ByVal SourceArr As Variant, _
                                Optional ByVal AddHeader As Boolean = False, _
                                Optional ByVal HeaderName As String = "S.No.") As Variant
@@ -1204,7 +1203,7 @@ Function addColumn_Sequence(ByVal SourceArr As Variant, _
 
     ' --- Validate input (cheap, single call, outside any loop) ---
     If Not IsArray(SourceArr) Then
-        Err.Raise vbObjectError + 1, "addColumn_Sequnce", _
+        Err.Raise vbObjectError + 1, "addColumn_Sequence", _
             "SourceArr must be an array (e.g. Range.Value2 output)."
     End If
 
@@ -1284,7 +1283,7 @@ Private Sub AppendSequenceColumn_FillSeq(ByRef arr As Variant, _
     If AddHeader Then
         arr(firstRow, newCol) = HeaderName
         For r = firstRow + 1 To lastRow
-            arr(r, newCol) = r - firstRow          ' 1, 2, 3... from row 2
+            arr(r, newCol) = r - firstRow + 1       ' 2, 3, 4... from row 2
         Next r
     Else
         For r = firstRow To lastRow
