@@ -6,6 +6,7 @@ Option Explicit
 ' Both arrays must have the same number of columns.
 ' Result is always a 1-based 2D array.
 Public Function VJoin(ByVal arr1 As Variant, ByVal arr2 As Variant) As Variant
+    
     Dim r1 As Long, c1 As Long, r2 As Long, c2 As Long
     Dim lr1 As Long, lc1 As Long, lr2 As Long, lc2 As Long
     Dim dims1 As Integer, dims2 As Integer
@@ -1145,3 +1146,186 @@ ErrorHandler:
     Err.Raise Err.Number, "ArrayUtil_getColumnsFromArray", Err.Description
 
 End Function
+
+'===========================================================================
+' Function : AppendSequenceColumn
+' Purpose  : Takes a 1D or 2D array (e.g. from Range.Value2) and returns a
+'            NEW 2D array with one extra column appended on the right
+'            containing a running sequence number.
+'
+'            - If SourceArr is 1D  -> output is 2D with 2 columns
+'                                     (col 1 = original data, col 2 = sequence)
+'            - If SourceArr is 2D  -> output has (original cols + 1) columns,
+'                                     sequence appended as the last column
+'
+' Parameters:
+'   SourceArr   - The input array, 1D or 2D (1-based, as from Range.Value/Value2)
+'   AddHeader   - True  = first row of the new column holds HeaderName,
+'                         sequence numbering (1,2,3...) starts from row 2
+'                 False = sequence numbering (1,2,3...) starts from row 1
+'   HeaderName  - Text to use as the header when AddHeader = True
+'                 (ignored when AddHeader = False)
+'
+' Returns  : Variant - new 2D array with the sequence column appended
+'
+' EFFICIENCY NOTES (why it's built this way):
+'   1) 2D input: ReDim Preserve is applied DIRECTLY to the (ByVal, so
+'      already-local) parameter array itself - no separate "outArr = arr"
+'      assignment first. ReDim Preserve can only resize the LAST dimension
+'      of a multi-dim array, which is exactly the dimension being grown,
+'      so VBA's internal reallocation/copy (native memmove-style) handles
+'      moving the existing data - not a manual VBA loop.
+'   2) 1D input: going from 1 dimension to 2 dimensions is a dimension-
+'      COUNT change, which ReDim Preserve cannot do. A single O(rows) copy
+'      loop is unavoidable here - but it is only ever a single pass, never
+'      nested.
+'   3) The sequence column is filled using index arithmetic
+'      (r - firstRow [+ 1]) instead of a separate incrementing counter
+'      variable - one less variable read/write per loop iteration.
+'   4) All loop counters/bounds are declared As Long (not Variant), and
+'      LBound/UBound are read into locals ONCE rather than being
+'      re-evaluated inside any loop.
+'   5) Net result: exactly one O(n) pass over row count for numbering,
+'      plus (2D case) one native bulk copy for the existing columns, and
+'      (1D case) one O(n) copy pass that can't be avoided in pure VBA.
+'      This is about as efficient as this operation gets without leaving
+'      VBA (e.g. writing formulas to the sheet instead of an array).
+'===========================================================================
+
+Function addColumn_Sequence(ByVal SourceArr As Variant, _
+                               Optional ByVal AddHeader As Boolean = False, _
+                               Optional ByVal HeaderName As String = "S.No.") As Variant
+
+    Dim firstRow As Long, lastRow As Long
+    Dim firstCol As Long, lastCol As Long, newCol As Long
+    Dim r As Long
+    Dim numDims As Long
+    Dim probe As Long
+
+    ' --- Validate input (cheap, single call, outside any loop) ---
+    If Not IsArray(SourceArr) Then
+        Err.Raise vbObjectError + 1, "addColumn_Sequnce", _
+            "SourceArr must be an array (e.g. Range.Value2 output)."
+    End If
+
+    ' --- Detect 1D vs 2D once ---
+    On Error Resume Next
+    probe = UBound(SourceArr, 2)
+    If Err.Number <> 0 Then
+        numDims = 1
+    Else
+        numDims = 2
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    If numDims = 1 Then
+        ' ---------------- 1D SOURCE -> 2D OUTPUT ----------------
+        On Error Resume Next
+        firstRow = LBound(SourceArr, 1)
+        lastRow = UBound(SourceArr, 1)
+        If Err.Number <> 0 Then
+            On Error GoTo 0
+            Err.Raise vbObjectError + 2, "addColumn_Sequence", _
+                "SourceArr must be a 1D or 2D array."
+        End If
+        On Error GoTo 0
+
+        ' Dimension-count change (1D -> 2D): ReDim Preserve can't do this,
+        ' so a fresh 2-column array is allocated and filled in ONE pass.
+        Dim outArr1D As Variant
+        ReDim outArr1D(firstRow To lastRow, 1 To 2)
+        For r = firstRow To lastRow
+            outArr1D(r, 1) = SourceArr(r)
+        Next r
+        newCol = 2
+
+        AppendSequenceColumn_FillSeq outArr1D, firstRow, lastRow, newCol, AddHeader, HeaderName
+        addColumn_Sequence = outArr1D
+        Exit Function
+
+    Else
+        ' ---------------- 2D SOURCE -> 2D OUTPUT (+1 col) ----------------
+        On Error Resume Next
+        firstRow = LBound(SourceArr, 1)
+        lastRow = UBound(SourceArr, 1)
+        firstCol = LBound(SourceArr, 2)
+        lastCol = UBound(SourceArr, 2)
+        If Err.Number <> 0 Then
+            On Error GoTo 0
+            Err.Raise vbObjectError + 2, "addColumn_Sequence", _
+                "SourceArr must be a 1D or 2D array."
+        End If
+        On Error GoTo 0
+
+        newCol = lastCol + 1
+
+        ' Grow the LAST dimension in place, directly on the (already-local,
+        ' ByVal) parameter - no intermediate "outArr = SourceArr" copy.
+        ' VBA's own reallocation handles preserving the existing columns.
+        ReDim Preserve SourceArr(firstRow To lastRow, firstCol To newCol)
+
+        AppendSequenceColumn_FillSeq SourceArr, firstRow, lastRow, newCol, AddHeader, HeaderName
+        addColumn_Sequence = SourceArr
+        Exit Function
+    End If
+
+End Function
+
+'===========================================================================
+' Private helper: fills the sequence column in a single O(rows) pass using
+' index arithmetic (no separate incrementing counter variable).
+'===========================================================================
+Private Sub AppendSequenceColumn_FillSeq(ByRef arr As Variant, _
+                                          ByVal firstRow As Long, ByVal lastRow As Long, _
+                                          ByVal newCol As Long, _
+                                          ByVal AddHeader As Boolean, ByVal HeaderName As String)
+    Dim r As Long
+    If AddHeader Then
+        arr(firstRow, newCol) = HeaderName
+        For r = firstRow + 1 To lastRow
+            arr(r, newCol) = r - firstRow          ' 1, 2, 3... from row 2
+        Next r
+    Else
+        For r = firstRow To lastRow
+            arr(r, newCol) = r - firstRow + 1       ' 1, 2, 3... from row 1
+        Next r
+    End If
+End Sub
+
+
+
+Sub Demo_AppendSequenceColumn()
+
+    Dim srcArr2D As Variant
+    Dim srcArr1D As Variant
+    Dim resultArr As Variant
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+
+    ' ---------- 2D example ----------
+    srcArr2D = Range("A1:C10").Value2   ' <-- replace with your actual range
+
+    resultArr = addColumn_Sequence(srcArr2D, AddHeader:=False)
+    resultArr = addColumn_Sequence(srcArr2D, AddHeader:=True, HeaderName:="Sr No")
+
+    With ThisWorkbook.Worksheets.Add
+        .Range("A1").Resize(UBound(resultArr, 1), UBound(resultArr, 2)).Value2 = resultArr
+    End With
+
+    ' ---------- 1D example ----------
+    srcArr1D = Application.Transpose(Range("A1:A10").Value2)  ' <-- single column as 1D array
+
+    resultArr = addColumn_Sequence(srcArr1D, AddHeader:=False)
+    resultArr = addColumn_Sequence(srcArr1D, AddHeader:=True, HeaderName:="Sr No")
+
+    With ThisWorkbook.Worksheets.Add
+        .Range("A1").Resize(UBound(resultArr, 1), UBound(resultArr, 2)).Value2 = resultArr
+    End With
+
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+
+End Sub
+
