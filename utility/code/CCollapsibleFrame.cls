@@ -10,17 +10,37 @@ Attribute VB_Exposed = False
 Option Explicit
 
 '==============================================================================
-' Class   : CCollapsibleFrame   (v3)
+' Class   : CCollapsibleFrame   (v4L)
 '           v2   - custom colours, fonts, collapsible mode
 '           v2.1 - step trace, tooltip fix
 '           v3   - state-specific heading texts, icon position, custom icons
+'           v4L  - Label container mode + ContainerTransparent
 '
-' Purpose : Turns an EXISTING MSForms.Frame into a collapsible panel with a
+' Purpose : Turns an existing container into a collapsible panel with a
 '           header bar (icon + heading) and a content area.
 '
-' Rules   : - Frame Left/Top/Width/Height are never changed (verified after
-'             every operation).
-'           - Child controls are hidden/restored only via .Visible; their
+' TWO CONTAINER MODES (chosen automatically by Initialize):
+'
+'   Frame mode  - Initialize Me.Frame1, ...
+'                 The Frame hosts the content controls (unchanged behaviour).
+'                 A Frame is ALWAYS opaque, so ContainerTransparent = True
+'                 paints it with its parent's BackColor (looks transparent on
+'                 a solid-colour form; a form Picture will NOT show through).
+'
+'   Label mode  - Initialize Me.Label1, ...
+'                 The Label is only the panel's BACKGROUND. It cannot contain
+'                 controls. Content controls sit on the same parent as the
+'                 Label (the form, a Frame or a Page), placed inside the
+'                 Label's rectangle. The class sends the Label to the back,
+'                 puts the header on top, and treats every sibling control
+'                 that lies fully inside the Label's rectangle as content.
+'                 ContainerTransparent = True gives TRUE transparency
+'                 (BackStyle = fmBackStyleTransparent): the form's colour and
+'                 Picture show through.
+'
+' Rules   : - Container Left/Top/Width/Height are never changed (verified
+'             after every operation).
+'           - Content controls are hidden/restored only via .Visible; their
 '             positions and values are never touched.
 '           - No API calls, no OnTime, no extra classes or modules.
 '
@@ -35,8 +55,8 @@ Option Explicit
 '           ExpandedIcon  = ""  -> ChrW(&H25BC)  (down triangle)
 '           CollapsedIcon = ""  -> ChrW(&H25B6)  (right triangle)
 '
-' Unicode : The VBA editor is ANSI - typing a symbol such as a triangle in code becomes "?".
-'           Pass symbols with ChrW, e.g. panel.ExpandedIcon = ChrW(&H25B2).
+' Unicode : The VBA editor is ANSI - typing a symbol such as a triangle in
+'           code becomes "?". Pass symbols with ChrW, e.g. ChrW(&H25B2).
 '==============================================================================
 
 '--- Defaults -----------------------------------------------------------------
@@ -70,6 +90,7 @@ Private Const TITLE_GAP              As Single = 4          ' icon to heading
 Private Const TITLE_LEFT_NO_ARROW    As Single = 10         ' heading left edge w/o icon
 Private Const RIGHT_PAD              As Single = 8          ' heading to right edge
 Private Const HEADER_VPAD            As Single = 4          ' min space above/below text
+Private Const INSIDE_TOLERANCE       As Single = 0.75       ' Label mode containment test
 
 '--- Error numbers ------------------------------------------------------------
 Private Const ERR_NO_FRAME           As Long = vbObjectError + 513
@@ -77,12 +98,22 @@ Private Const ERR_BAD_FONT_SIZE      As Long = vbObjectError + 514
 Private Const ERR_BAD_FONT_NAME      As Long = vbObjectError + 515
 Private Const ERR_INIT_FAILED        As Long = vbObjectError + 516
 Private Const ERR_BAD_ICON_POS       As Long = vbObjectError + 517
+Private Const ERR_BAD_CONTAINER      As Long = vbObjectError + 518
 
 '--- Diagnostics: set True to print each Initialize step to the Immediate window
 Private Const TRACE_STEPS            As Boolean = False
 
-'--- Controls -----------------------------------------------------------------
-Private mFrame              As MSForms.Frame
+'--- Container ----------------------------------------------------------------
+Private mContainer          As Object           ' the Frame or Label passed in
+Private mFrame              As MSForms.Frame    ' set in Frame mode only
+Private mLabel              As MSForms.Label    ' set in Label mode only
+Private mHost               As Object           ' owner of header controls
+Private mHostName           As String
+Private mIsLabelMode        As Boolean
+Private mOffX               As Single           ' header offset inside mHost
+Private mOffY               As Single
+
+'--- Header controls ----------------------------------------------------------
 Private WithEvents mBar     As MSForms.Label    ' header background (clickable)
 Attribute mBar.VB_VarHelpID = -1
 Private WithEvents mArrow   As MSForms.Label    ' icon (clickable)
@@ -96,8 +127,8 @@ Private mExpanded           As Boolean
 Private mRequestedHeight    As Single           ' header height asked for
 Private mHeaderHeight       As Single           ' header height actually used
 Private mPrefix             As String
-Private mVisibility         As Collection       ' child Visible states, keyed by name
-Private mCollapsedBackColor As Long
+Private mVisibility         As Collection       ' Visible state per hidden control
+Private mHiddenNames        As Collection       ' names hidden by the last Collapse
 Private mStep               As String           ' last step reached (diagnostics)
 
 '--- Configurable style / behaviour -------------------------------------------
@@ -110,6 +141,7 @@ Private mFontSize           As Single
 Private mFontBold           As Boolean
 Private mFontItalic         As Boolean
 Private mCollapsible        As Boolean
+Private mContainerTransparent As Boolean
 
 Private mHeading            As String           ' base heading
 Private mExpandedText       As String           ' "" = use base heading
@@ -130,6 +162,7 @@ Private mOrigCaption        As String
 Private mOrigBorderStyle    As Long
 Private mOrigSpecialEffect  As Long
 Private mOrigBackColor      As Long
+Private mOrigBackStyle      As Long             ' Label mode only
 
 '==============================================================================
 ' LIFECYCLE
@@ -145,6 +178,7 @@ Private Sub Class_Initialize()
     mFontBold = False
     mFontItalic = False
     mCollapsible = True
+    mContainerTransparent = False
     mRequestedHeight = DEFAULT_HEADER_HEIGHT
 
     mHeading = vbNullString
@@ -162,77 +196,135 @@ Private Sub Class_Terminate()
     Set mArrow = Nothing
     Set mTitle = Nothing
     Set mVisibility = Nothing
+    Set mHiddenNames = Nothing
     Set mFrame = Nothing
+    Set mLabel = Nothing
+    Set mHost = Nothing
+    Set mContainer = Nothing
 End Sub
 
 '==============================================================================
 ' PUBLIC API - CORE
 '==============================================================================
 
-Public Sub Initialize(ByVal FrameObject As MSForms.Frame, _
+' ContainerObject: an existing MSForms Frame (Frame mode, as before) or an
+' MSForms Label (Label mode). Existing calls such as
+'   panel.Initialize Me.Frame1, "Customer Information"
+' work unchanged.
+Public Sub Initialize(ByVal ContainerObject As Object, _
                       Optional ByVal HeadingText As String = vbNullString, _
                       Optional ByVal HeaderHeight As Single = DEFAULT_HEADER_HEIGHT)
 
-    If FrameObject Is Nothing Then
+    Dim useLabel As Boolean
+
+    ' --- Validate the container type (before the trace handler) -------------
+    If ContainerObject Is Nothing Then
         Err.Raise ERR_NO_FRAME, "CCollapsibleFrame.Initialize", _
-                  "FrameObject is Nothing. Pass an existing Frame, e.g. Me.Frame1."
+                  "Container is Nothing. Pass an existing Frame or Label, e.g. Me.Frame1."
+    End If
+
+    If TypeOf ContainerObject Is MSForms.Frame Then
+        useLabel = False
+    ElseIf TypeOf ContainerObject Is MSForms.Label Then
+        useLabel = True
+    Else
+        Err.Raise ERR_BAD_CONTAINER, "CCollapsibleFrame.Initialize", _
+                  "Container must be an MSForms Frame or Label (got " & _
+                  TypeName(ContainerObject) & ")."
     End If
 
     On Error GoTo Failed
-    Trace "Initialize: start (" & FrameObject.Name & ")"
+    Trace "Initialize: start (" & ContainerObject.Name & ")"
 
     ' Re-initialisation: undo previous styling first (no duplicate headers).
     ' All configured properties are kept.
     If mInitialized Then Detach
 
-    Set mFrame = FrameObject
-    mPrefix = "ccf_" & mFrame.Name & "_"
+    ' --- Bind the container --------------------------------------------------
+    Set mContainer = ContainerObject
+    mIsLabelMode = useLabel
+    If mIsLabelMode Then
+        Set mLabel = ContainerObject
+        Set mFrame = Nothing
+        Trace "Initialize: resolve Label parent"
+        Set mHost = ContainerObject.Parent          ' form, Frame or Page
+    Else
+        Set mFrame = ContainerObject
+        Set mLabel = Nothing
+        Set mHost = mFrame
+    End If
+    mHostName = SafeName(mHost)
+    mPrefix = "ccf_" & mContainer.Name & "_"
 
     ' A heading passed here becomes the base heading; an omitted one keeps
     ' any base heading already set through the Heading property.
     If Len(Trim$(HeadingText)) > 0 Then mHeading = HeadingText
 
-    ' 1. Remember geometry and appearance
-    Trace "Initialize: read frame properties"
-    With mFrame
-        mLeft = .Left
-        mTop = .Top
-        mWidth = .Width
-        mHeight = .Height
-        mOrigCaption = .Caption
-        mOrigBorderStyle = .BorderStyle
-        mOrigSpecialEffect = .SpecialEffect
-        mOrigBackColor = .BackColor
-    End With
+    ' --- 1. Remember geometry and appearance ---------------------------------
+    Trace "Initialize: read container properties"
+    mLeft = mContainer.Left
+    mTop = mContainer.Top
+    mWidth = mContainer.Width
+    mHeight = mContainer.Height
+
+    If mIsLabelMode Then
+        With mLabel
+            mOrigCaption = .Caption
+            mOrigBorderStyle = .BorderStyle
+            mOrigSpecialEffect = .SpecialEffect
+            mOrigBackColor = .BackColor
+            mOrigBackStyle = .BackStyle
+        End With
+        mOffX = mLeft
+        mOffY = mTop
+    Else
+        With mFrame
+            mOrigCaption = .Caption
+            mOrigBorderStyle = .BorderStyle
+            mOrigSpecialEffect = .SpecialEffect
+            mOrigBackColor = .BackColor
+        End With
+        mOffX = 0
+        mOffY = 0
+    End If
 
     If HeaderHeight < MIN_HEADER_HEIGHT Then HeaderHeight = DEFAULT_HEADER_HEIGHT
     mRequestedHeight = HeaderHeight
 
-    ' 2. Remove header controls left behind by another instance on this frame
+    ' --- 2. Remove header controls left behind by another instance ---------
     Trace "Initialize: remove old header controls"
     RemoveHeaderControls
 
-    ' 3. Style the frame (flat, captionless)
-    Trace "Initialize: style frame"
-    With mFrame
-        .Caption = vbNullString
-        .SpecialEffect = fmSpecialEffectFlat
-        .BorderStyle = fmBorderStyleNone
-        .BackColor = mContentColor
-    End With
-    Trace "Initialize: read parent colour"
-    mCollapsedBackColor = ParentBackColor()
+    ' --- 3. Style the container (flat, captionless) --------------------------
+    Trace "Initialize: style container"
+    If mIsLabelMode Then
+        With mLabel
+            .Caption = vbNullString
+            .SpecialEffect = fmSpecialEffectFlat
+            .BorderStyle = fmBorderStyleNone
+        End With
+        ' Background Label goes behind every sibling, so it never covers content
+        Trace "Initialize: send background Label to back"
+        HostCtl(mContainer.Name).ZOrder fmZOrderBack
+    Else
+        With mFrame
+            .Caption = vbNullString
+            .SpecialEffect = fmSpecialEffectFlat
+            .BorderStyle = fmBorderStyleNone
+        End With
+    End If
 
-    ' 4. Build the header and apply all styling
+    ' --- 4. Build the header (always on top) ---------------------------------
     Trace "Initialize: build header"
     BuildHeader
 
-    ' 5. Initial state
+    ' --- 5. Initial state ----------------------------------------------------
     Set mVisibility = New Collection
+    Set mHiddenNames = New Collection
     mExpanded = True
     mInitialized = True
     Trace "Initialize: apply colours"
-    ApplyColors
+    ApplyColors             ' includes content background / transparency
     Trace "Initialize: apply fonts"
     ApplyTitleFont          ' also applies icon font + layout
     Trace "Initialize: update header state"
@@ -251,26 +343,25 @@ Failed:
 End Sub
 
 Public Sub Expand()
-    Dim ctl As MSForms.Control
-    Dim wasVisible As Boolean
-    Dim found As Boolean
+    Dim nm As Variant
 
     If Not mInitialized Then Exit Sub
     If mExpanded Then Exit Sub
 
-    mFrame.BackColor = mContentColor
-
-    On Error Resume Next
-    For Each ctl In mFrame.Controls
-        If Not IsHeaderControl(ctl.Name) Then
-            wasVisible = StoredVisible(ctl.Name, found)
-            If found Then ctl.Visible = wasVisible
-        End If
-    Next ctl
-    On Error GoTo 0
+    ' Restore exactly the controls the last Collapse hid, to their old state.
+    ' A control removed in the meantime is skipped.
+    If Not mHiddenNames Is Nothing Then
+        On Error Resume Next
+        For Each nm In mHiddenNames
+            mHost.Controls(CStr(nm)).Visible = CBool(mVisibility(CStr(nm)))
+        Next nm
+        On Error GoTo 0
+    End If
 
     Set mVisibility = New Collection
+    Set mHiddenNames = New Collection
     mExpanded = True
+    ApplyContentBackground
     UpdateHeaderState
     EnforceGeometry
 End Sub
@@ -283,19 +374,22 @@ Public Sub Collapse()
     If Not mExpanded Then Exit Sub
 
     Set mVisibility = New Collection
+    Set mHiddenNames = New Collection
 
     On Error Resume Next
-    For Each ctl In mFrame.Controls
-        If Not IsHeaderControl(ctl.Name) Then
+    For Each ctl In mHost.Controls
+        If IsContentControl(ctl) Then
             mVisibility.Add ctl.Visible, ctl.Name   ' remember original state
+            If Err.Number = 0 Then mHiddenNames.Add ctl.Name
+            Err.Clear
             ctl.Visible = False
         End If
     Next ctl
     On Error GoTo 0
 
-    ' Content area blends into the parent so only the header bar is seen
-    mFrame.BackColor = mCollapsedBackColor
+    ' Content area blends away so only the header bar is seen
     mExpanded = False
+    ApplyContentBackground
     UpdateHeaderState
     EnforceGeometry
 End Sub
@@ -317,11 +411,22 @@ Public Property Get IsInitialized() As Boolean
     IsInitialized = mInitialized
 End Property
 
+' Frame mode: the Frame. Label mode: Nothing (use Container).
 Public Property Get Frame() As MSForms.Frame
     Set Frame = mFrame
 End Property
 
-' Removes the header and restores the frame's original look and child visibility.
+' The Frame or Label passed to Initialize.
+Public Property Get Container() As Object
+    Set Container = mContainer
+End Property
+
+Public Property Get IsLabelMode() As Boolean
+    IsLabelMode = mIsLabelMode
+End Property
+
+' Removes the header and restores the container's original look and the
+' content controls' visibility.
 Public Sub Detach()
     If Not mInitialized Then Exit Sub
 
@@ -330,18 +435,32 @@ Public Sub Detach()
     RemoveHeaderControls
 
     On Error Resume Next
-    With mFrame
-        .Caption = mOrigCaption
-        .BorderStyle = mOrigBorderStyle
-        .SpecialEffect = mOrigSpecialEffect
-        .BackColor = mOrigBackColor
-    End With
+    If mIsLabelMode Then
+        With mLabel
+            .Caption = mOrigCaption
+            .BorderStyle = mOrigBorderStyle
+            .SpecialEffect = mOrigSpecialEffect
+            .BackColor = mOrigBackColor
+            .BackStyle = mOrigBackStyle
+        End With
+    Else
+        With mFrame
+            .Caption = mOrigCaption
+            .BorderStyle = mOrigBorderStyle
+            .SpecialEffect = mOrigSpecialEffect
+            .BackColor = mOrigBackColor
+        End With
+    End If
     On Error GoTo 0
 
     EnforceGeometry
     mInitialized = False
     Set mVisibility = Nothing
+    Set mHiddenNames = Nothing
     Set mFrame = Nothing
+    Set mLabel = Nothing
+    Set mHost = Nothing
+    Set mContainer = Nothing
 End Sub
 
 '==============================================================================
@@ -471,7 +590,7 @@ End Property
 
 Public Property Let ContentColor(ByVal Value As Long)
     mContentColor = Value
-    ApplyColors      ' while collapsed, takes effect on the next Expand
+    ApplyColors      ' shown only when expanded and not transparent
 End Property
 
 Public Property Get ArrowColor() As Long
@@ -482,6 +601,31 @@ Public Property Let ArrowColor(ByVal Value As Long)
     mArrowColor = Value
     ApplyColors
 End Property
+
+'==============================================================================
+' PUBLIC API - TRANSPARENCY
+'==============================================================================
+
+' True  : content area is transparent.
+'         Label mode - real transparency (BackStyle = Transparent).
+'         Frame mode - Frame painted in its parent's BackColor (closest
+'                      possible; a Frame cannot be transparent).
+'         The header always stays opaque in HeaderColor.
+' False : content area uses ContentColor (default).
+Public Property Get ContainerTransparent() As Boolean
+    ContainerTransparent = mContainerTransparent
+End Property
+
+Public Property Let ContainerTransparent(ByVal Value As Boolean)
+    mContainerTransparent = Value
+    ApplyContentBackground          ' no-op before Initialize; applied there
+End Property
+
+' Frame mode: re-reads the parent's colour after you change the form's or
+' parent's BackColor. Label mode needs no refresh (true transparency).
+Public Sub RefreshBackground()
+    ApplyContentBackground
+End Sub
 
 '==============================================================================
 ' PUBLIC API - HEADING FONT
@@ -597,19 +741,19 @@ End Sub
 Private Sub BuildHeader()
     ' Background bar
     Trace "BuildHeader: add bar"
-    Set mBar = mFrame.Controls.Add("Forms.Label.1", mPrefix & "Bar", True)
+    Set mBar = mHost.Controls.Add("Forms.Label.1", mPrefix & "Bar", True)
     With mBar
         .Caption = vbNullString
         .BackStyle = fmBackStyleOpaque
         .BorderStyle = fmBorderStyleNone
         .SpecialEffect = fmSpecialEffectFlat
-        .Left = 0
-        .Top = 0
+        .Left = mOffX
+        .Top = mOffY
     End With
 
     ' Icon
     Trace "BuildHeader: add icon"
-    Set mArrow = mFrame.Controls.Add("Forms.Label.1", mPrefix & "Arrow", True)
+    Set mArrow = mHost.Controls.Add("Forms.Label.1", mPrefix & "Arrow", True)
     With mArrow
         .BackStyle = fmBackStyleTransparent
         .BorderStyle = fmBorderStyleNone
@@ -622,7 +766,7 @@ Private Sub BuildHeader()
 
     ' Heading text
     Trace "BuildHeader: add title"
-    Set mTitle = mFrame.Controls.Add("Forms.Label.1", mPrefix & "Title", True)
+    Set mTitle = mHost.Controls.Add("Forms.Label.1", mPrefix & "Title", True)
     With mTitle
         .BackStyle = fmBackStyleTransparent
         .BorderStyle = fmBorderStyleNone
@@ -634,17 +778,45 @@ Private Sub BuildHeader()
 
     ' Header must sit above any existing content: bar first, then icon/title
     Trace "BuildHeader: z-order"
-    HeaderCtl("Bar").ZOrder fmZOrderFront
-    HeaderCtl("Arrow").ZOrder fmZOrderFront
-    HeaderCtl("Title").ZOrder fmZOrderFront
+    HostCtl(mPrefix & "Bar").ZOrder fmZOrderFront
+    HostCtl(mPrefix & "Arrow").ZOrder fmZOrderFront
+    HostCtl(mPrefix & "Title").ZOrder fmZOrderFront
 End Sub
 
 Private Sub ApplyColors()
     If Not mBar Is Nothing Then mBar.BackColor = mHeaderColor
     If Not mTitle Is Nothing Then mTitle.ForeColor = mHeaderFontColor
     If Not mArrow Is Nothing Then mArrow.ForeColor = mArrowColor
-    If mInitialized Then
-        If mExpanded Then mFrame.BackColor = mContentColor
+    ApplyContentBackground
+End Sub
+
+' Single place that decides how the content area is painted.
+'
+'                     expanded & solid      expanded & transparent / collapsed
+'   Label mode        opaque ContentColor   BackStyle = Transparent
+'   Frame mode        ContentColor          parent's BackColor
+Private Sub ApplyContentBackground()
+    Dim target As Long
+
+    If Not mInitialized Then Exit Sub
+    If mContainer Is Nothing Then Exit Sub
+
+    If mIsLabelMode Then
+        If mContainerTransparent Or Not mExpanded Then
+            If mLabel.BackStyle <> fmBackStyleTransparent Then _
+                mLabel.BackStyle = fmBackStyleTransparent
+        Else
+            mLabel.BackColor = mContentColor
+            If mLabel.BackStyle <> fmBackStyleOpaque Then _
+                mLabel.BackStyle = fmBackStyleOpaque
+        End If
+    Else
+        If mContainerTransparent Or Not mExpanded Then
+            target = ParentBackColor()
+        Else
+            target = mContentColor
+        End If
+        If mFrame.BackColor <> target Then mFrame.BackColor = target
     End If
 End Sub
 
@@ -702,18 +874,24 @@ End Function
 
 ' Sizes and positions bar, icon and heading. Grows the header if the font
 ' needs more room, so the heading always stays vertically centred.
+' All positions are relative to the container's top-left (mOffX, mOffY).
 Private Sub LayoutHeader()
     Dim barWidth As Single
     Dim iconWidth As Single
     Dim titleLeft As Single
     Dim titleRight As Single
+    Dim iconLeft As Single
     Dim h As Single
     Dim arrowCtl As MSForms.Control
 
     If mBar Is Nothing Or mTitle Is Nothing Or mArrow Is Nothing Then Exit Sub
 
-    barWidth = mFrame.InsideWidth
-    If barWidth <= 0 Then barWidth = mWidth
+    If mIsLabelMode Then
+        barWidth = mWidth
+    Else
+        barWidth = mFrame.InsideWidth
+        If barWidth <= 0 Then barWidth = mWidth
+    End If
 
     ' Measure heading height and the wider of the two icons
     Trace "LayoutHeader: measure"
@@ -727,36 +905,38 @@ Private Sub LayoutHeader()
     mHeaderHeight = h
 
     ' Bar
-    mBar.Left = 0
-    mBar.Top = 0
+    mBar.Left = mOffX
+    mBar.Top = mOffY
     mBar.Width = barWidth
     mBar.Height = h
 
     ' Icon visibility
     Trace "LayoutHeader: icon visibility"
-    Set arrowCtl = HeaderCtl("Arrow")
+    Set arrowCtl = HostCtl(mPrefix & "Arrow")
     If arrowCtl.Visible <> mCollapsible Then arrowCtl.Visible = mCollapsible
 
-    ' Icon + heading positions
-    mArrow.Width = iconWidth
-    mArrow.Top = MaxSingle(0, (h - mArrow.Height) / 2)
-
+    ' Icon + heading positions (relative to the bar)
     If Not mCollapsible Then
+        iconLeft = ICON_EDGE_PAD
         titleLeft = TITLE_LEFT_NO_ARROW
         titleRight = barWidth - RIGHT_PAD
     ElseIf mIconPosition = POS_RIGHT Then
-        mArrow.Left = MaxSingle(0, barWidth - ICON_EDGE_PAD - iconWidth)
+        iconLeft = MaxSingle(0, barWidth - ICON_EDGE_PAD - iconWidth)
         titleLeft = TITLE_LEFT_NO_ARROW
-        titleRight = mArrow.Left - TITLE_GAP
+        titleRight = iconLeft - TITLE_GAP
     Else
-        mArrow.Left = ICON_EDGE_PAD
+        iconLeft = ICON_EDGE_PAD
         titleLeft = ICON_EDGE_PAD + iconWidth + TITLE_GAP
         titleRight = barWidth - RIGHT_PAD
     End If
 
-    mTitle.Left = titleLeft
+    mArrow.Width = iconWidth
+    mArrow.Left = mOffX + iconLeft
+    mArrow.Top = mOffY + MaxSingle(0, (h - mArrow.Height) / 2)
+
+    mTitle.Left = mOffX + titleLeft
     mTitle.Width = MaxSingle(10, titleRight - titleLeft)
-    mTitle.Top = MaxSingle(0, (h - mTitle.Height) / 2)
+    mTitle.Top = mOffY + MaxSingle(0, (h - mTitle.Height) / 2)
 End Sub
 
 ' Natural width of the wider icon, so the icon box (and the heading next to
@@ -826,6 +1006,44 @@ Private Function IconFor(ByVal expandedState As Boolean) As String
 End Function
 
 '==============================================================================
+' PRIVATE HELPERS - CONTENT DETECTION
+'==============================================================================
+
+' Frame mode : every control in the Frame except the header.
+' Label mode : sibling controls (same parent as the Label) lying fully inside
+'              the Label's rectangle, except the Label itself and the header.
+Private Function IsContentControl(ByVal ctl As MSForms.Control) As Boolean
+    If IsHeaderControl(ctl.Name) Then Exit Function
+
+    If Not mIsLabelMode Then
+        IsContentControl = True
+        Exit Function
+    End If
+
+    If StrComp(ctl.Name, mContainer.Name, vbTextCompare) = 0 Then Exit Function
+    If Not IsDirectChildOfHost(ctl) Then Exit Function
+    IsContentControl = IsInsidePanel(ctl)
+End Function
+
+' UserForm.Controls also lists controls nested in Frames/MultiPages, whose
+' Left/Top are relative to THEIR parent - exclude them from the geometry test.
+' (Hiding their parent Frame hides them anyway.)
+Private Function IsDirectChildOfHost(ByVal ctl As Object) As Boolean
+    On Error GoTo NotChild
+    IsDirectChildOfHost = (StrComp(ctl.Parent.Name, mHostName, vbTextCompare) = 0)
+    Exit Function
+NotChild:
+    IsDirectChildOfHost = False
+End Function
+
+Private Function IsInsidePanel(ByVal ctl As MSForms.Control) As Boolean
+    IsInsidePanel = (ctl.Left >= mLeft - INSIDE_TOLERANCE) And _
+                    (ctl.Top >= mTop - INSIDE_TOLERANCE) And _
+                    (ctl.Left + ctl.Width <= mLeft + mWidth + INSIDE_TOLERANCE) And _
+                    (ctl.Top + ctl.Height <= mTop + mHeight + INSIDE_TOLERANCE)
+End Function
+
+'==============================================================================
 ' PRIVATE HELPERS - HOUSEKEEPING
 '==============================================================================
 
@@ -834,60 +1052,56 @@ Private Sub Trace(ByVal stepName As String)
     If TRACE_STEPS Then Debug.Print "CCollapsibleFrame | " & stepName
 End Sub
 
-' Extender view of a header control (Visible, ZOrder live here).
-Private Function HeaderCtl(ByVal suffix As String) As MSForms.Control
-    Set HeaderCtl = mFrame.Controls(mPrefix & suffix)
+' Extender view of a control in the host (Visible, ZOrder live here).
+Private Function HostCtl(ByVal ctlName As String) As MSForms.Control
+    Set HostCtl = mHost.Controls(ctlName)
+End Function
+
+Private Function SafeName(ByVal obj As Object) As String
+    On Error Resume Next
+    SafeName = obj.Name
+    On Error GoTo 0
 End Function
 
 Private Function IsHeaderControl(ByVal ctlName As String) As Boolean
     IsHeaderControl = (StrComp(Left$(ctlName, Len(mPrefix)), mPrefix, vbTextCompare) = 0)
 End Function
 
-Private Function StoredVisible(ByVal key As String, ByRef found As Boolean) As Boolean
-    found = False
-    If mVisibility Is Nothing Then Exit Function
-    On Error Resume Next
-    StoredVisible = mVisibility(key)
-    found = (Err.Number = 0)
-    Err.Clear
-    On Error GoTo 0
-End Function
-
 Private Sub RemoveHeaderControls()
     Set mBar = Nothing
     Set mArrow = Nothing
     Set mTitle = Nothing
-    If mFrame Is Nothing Then Exit Sub
+    If mHost Is Nothing Then Exit Sub
     RemoveIfExists mPrefix & "Title"
     RemoveIfExists mPrefix & "Arrow"
     RemoveIfExists mPrefix & "Bar"
 End Sub
 
+' Removes only this class's own header controls (matched by exact name).
 Private Sub RemoveIfExists(ByVal ctlName As String)
     Dim ctl As MSForms.Control
-    For Each ctl In mFrame.Controls
+    For Each ctl In mHost.Controls
         If StrComp(ctl.Name, ctlName, vbTextCompare) = 0 Then
-            mFrame.Controls.Remove ctlName
+            mHost.Controls.Remove ctlName
             Exit For
         End If
     Next ctl
 End Sub
 
-' Colour used for the content area when collapsed, so it blends into the parent.
+' Parent's current colour (Frame mode, transparent or collapsed).
+' A MultiPage Page has no BackColor, so it falls back to the system face.
 Private Function ParentBackColor() As Long
-    Dim host As Object
     On Error GoTo Fallback
-    Set host = mFrame              ' late-bound to reach the extender's Parent
-    ParentBackColor = host.Parent.BackColor
+    ParentBackColor = mContainer.Parent.BackColor
     Exit Function
 Fallback:
     ParentBackColor = CLR_FALLBACK_FORM
 End Function
 
-' Guarantee: the frame's footprint never changes.
+' Guarantee: the container's footprint never changes.
 Private Sub EnforceGeometry()
-    If mFrame Is Nothing Then Exit Sub
-    With mFrame
+    If mContainer Is Nothing Then Exit Sub
+    With mContainer
         If .Left <> mLeft Then .Left = mLeft
         If .Top <> mTop Then .Top = mTop
         If .Width <> mWidth Then .Width = mWidth
