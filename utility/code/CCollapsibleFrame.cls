@@ -15,6 +15,17 @@ Option Explicit
 '           v2.1 - step trace, tooltip fix
 '           v3   - state-specific heading texts, icon position, custom icons
 '           v4L  - Label container mode + ContainerTransparent
+'           v5   - pluggable header styles (HeaderStyle As IHeaderStyle)
+'
+' Header styles (optional):
+'           Needs class modules IHeaderStyle (interface) plus any style such
+'           as CHeaderStyleBottomBorder or CHeaderStyleDivider.
+'               Set panel.HeaderStyle = myStyle      ' before or after Initialize
+'               Set panel.HeaderStyle = Nothing      ' back to the default header
+'           The container keeps all behaviour; a style only draws decoration
+'           (and the Divider style positions the heading inside the text area
+'           the container gives it). Style controls are named
+'           "ccf_<container>_sty_*" so they are never treated as content.
 '
 ' Purpose : Turns an existing container into a collapsible panel with a
 '           header bar (icon + heading) and a content area.
@@ -91,6 +102,7 @@ Private Const TITLE_LEFT_NO_ARROW    As Single = 10         ' heading left edge 
 Private Const RIGHT_PAD              As Single = 8          ' heading to right edge
 Private Const HEADER_VPAD            As Single = 4          ' min space above/below text
 Private Const INSIDE_TOLERANCE       As Single = 0.75       ' Label mode containment test
+Private Const STYLE_TAG              As String = "sty_"     ' prefix for style-owned controls
 
 '--- Error numbers ------------------------------------------------------------
 Private Const ERR_NO_FRAME           As Long = vbObjectError + 513
@@ -112,6 +124,11 @@ Private mHostName           As String
 Private mIsLabelMode        As Boolean
 Private mOffX               As Single           ' header offset inside mHost
 Private mOffY               As Single
+
+'--- Header style (optional strategy object) ----------------------------------
+Private mStyle              As IHeaderStyle
+Private mRegionLeft         As Single           ' heading area given to the style
+Private mRegionRight        As Single
 
 '--- Header controls ----------------------------------------------------------
 Private WithEvents mBar     As MSForms.Label    ' header background (clickable)
@@ -201,6 +218,7 @@ Private Sub Class_Terminate()
     Set mLabel = Nothing
     Set mHost = Nothing
     Set mContainer = Nothing
+    Set mStyle = Nothing
 End Sub
 
 '==============================================================================
@@ -294,6 +312,7 @@ Public Sub Initialize(ByVal ContainerObject As Object, _
     ' --- 2. Remove header controls left behind by another instance ---------
     Trace "Initialize: remove old header controls"
     RemoveHeaderControls
+    RemoveStyleLeftovers
 
     ' --- 3. Style the container (flat, captionless) --------------------------
     Trace "Initialize: style container"
@@ -425,6 +444,25 @@ Public Property Get IsLabelMode() As Boolean
     IsLabelMode = mIsLabelMode
 End Property
 
+'==============================================================================
+' PUBLIC API - HEADER STYLE
+'==============================================================================
+
+' Optional decoration strategy. Nothing = the default header.
+' Use Set:  Set panel.HeaderStyle = myBottomBorderStyle
+' One style instance should serve one panel at a time.
+Public Property Get HeaderStyle() As IHeaderStyle
+    Set HeaderStyle = mStyle
+End Property
+
+Public Property Set HeaderStyle(ByVal Value As IHeaderStyle)
+    If Not mStyle Is Nothing Then
+        If Not Value Is mStyle Then mStyle.Clear  ' remove old decoration only
+    End If
+    Set mStyle = Value
+    LayoutHeader          ' restores default heading layout, then renders style
+End Property
+
 ' Removes the header and restores the container's original look and the
 ' content controls' visibility.
 Public Sub Detach()
@@ -432,6 +470,7 @@ Public Sub Detach()
 
     ' Expand even when non-collapsible (Expand itself has no such guard)
     Expand
+    If Not mStyle Is Nothing Then mStyle.Clear   ' style keeps its settings
     RemoveHeaderControls
 
     On Error Resume Next
@@ -937,6 +976,26 @@ Private Sub LayoutHeader()
     mTitle.Left = mOffX + titleLeft
     mTitle.Width = MaxSingle(10, titleRight - titleLeft)
     mTitle.Top = mOffY + MaxSingle(0, (h - mTitle.Height) / 2)
+
+    ' Heading area handed to a style (absolute host coordinates)
+    mRegionLeft = mOffX + titleLeft
+    mRegionRight = mOffX + MaxSingle(titleLeft + 10, titleRight)
+    RenderStyle
+End Sub
+
+' Lets the active style (if any) decorate the header, then keeps the icon
+' and heading in front of any decoration.
+Private Sub RenderStyle()
+    If mStyle Is Nothing Then Exit Sub
+    If mBar Is Nothing Or mTitle Is Nothing Or mArrow Is Nothing Then Exit Sub
+
+    Trace "RenderStyle"
+    mStyle.Render mHost, mPrefix & STYLE_TAG, mTitle, _
+                  mBar.Left, mBar.Top, mBar.Width, mBar.Height, _
+                  mRegionLeft, mRegionRight
+
+    HostCtl(mPrefix & "Arrow").ZOrder fmZOrderFront
+    HostCtl(mPrefix & "Title").ZOrder fmZOrderFront
 End Sub
 
 ' Natural width of the wider icon, so the icon box (and the heading next to
@@ -982,6 +1041,7 @@ End Sub
 Private Sub UpdateTitleText()
     If mTitle Is Nothing Then Exit Sub
     mTitle.Caption = CurrentHeadingText()
+    RenderStyle             ' e.g. Divider re-fits lines to the new text width
 End Sub
 
 Private Function CurrentHeadingText() As String
@@ -1075,6 +1135,26 @@ Private Sub RemoveHeaderControls()
     RemoveIfExists mPrefix & "Title"
     RemoveIfExists mPrefix & "Arrow"
     RemoveIfExists mPrefix & "Bar"
+End Sub
+
+' Removes style controls left on this container by an earlier instance
+' (names start with "ccf_<container>_sty_"). Collected first, then removed,
+' so the Controls collection is not modified while it is being enumerated.
+Private Sub RemoveStyleLeftovers()
+    Dim ctl As MSForms.Control
+    Dim names As Collection
+    Dim nm As Variant
+    Dim tag As String
+
+    If mHost Is Nothing Then Exit Sub
+    tag = mPrefix & STYLE_TAG
+    Set names = New Collection
+    For Each ctl In mHost.Controls
+        If StrComp(Left$(ctl.Name, Len(tag)), tag, vbTextCompare) = 0 Then names.Add ctl.Name
+    Next ctl
+    For Each nm In names
+        mHost.Controls.Remove CStr(nm)
+    Next nm
 End Sub
 
 ' Removes only this class's own header controls (matched by exact name).
