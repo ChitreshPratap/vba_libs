@@ -16,6 +16,7 @@ Option Explicit
 '           v3   - state-specific heading texts, icon position, custom icons
 '           v4L  - Label container mode + ContainerTransparent
 '           v5   - pluggable header styles (HeaderStyle As IHeaderStyle)
+'           v5.1 - HeaderTransparent (header bar BackStyle = Transparent)
 '
 ' Header styles (optional):
 '           Needs class modules IHeaderStyle (interface) plus any style such
@@ -159,6 +160,7 @@ Private mFontBold           As Boolean
 Private mFontItalic         As Boolean
 Private mCollapsible        As Boolean
 Private mContainerTransparent As Boolean
+Private mHeaderTransparent  As Boolean
 
 Private mHeading            As String           ' base heading
 Private mExpandedText       As String           ' "" = use base heading
@@ -196,6 +198,7 @@ Private Sub Class_Initialize()
     mFontItalic = False
     mCollapsible = True
     mContainerTransparent = False
+    mHeaderTransparent = False
     mRequestedHeight = DEFAULT_HEADER_HEIGHT
 
     mHeading = vbNullString
@@ -645,6 +648,24 @@ End Property
 ' PUBLIC API - TRANSPARENCY
 '==============================================================================
 
+' True  : the header bar is transparent - whatever lies behind the header
+'         shows through (see notes below). Heading text, icon and style
+'         decoration (border / divider lines) stay visible and clickable.
+' False : the header bar is painted in HeaderColor (default).
+' What shows through the header:
+'   Frame mode - the Frame's own colour (ContentColor, or the parent's
+'                colour when ContainerTransparent = True or collapsed).
+'   Label mode - the background Label when it is opaque, otherwise the
+'                form itself (ContainerTransparent = True or collapsed).
+Public Property Get HeaderTransparent() As Boolean
+    HeaderTransparent = mHeaderTransparent
+End Property
+
+Public Property Let HeaderTransparent(ByVal Value As Boolean)
+    mHeaderTransparent = Value
+    ApplyColors                     ' no-op before Initialize; applied there
+End Property
+
 ' True  : content area is transparent.
 '         Label mode - real transparency (BackStyle = Transparent).
 '         Frame mode - Frame painted in its parent's BackColor (closest
@@ -823,7 +844,16 @@ Private Sub BuildHeader()
 End Sub
 
 Private Sub ApplyColors()
-    If Not mBar Is Nothing Then mBar.BackColor = mHeaderColor
+    If Not mBar Is Nothing Then
+        ' HeaderColor is always kept on the bar, so switching transparency
+        ' off simply shows it again - nothing to "restore".
+        mBar.BackColor = mHeaderColor
+        If mHeaderTransparent Then
+            If mBar.BackStyle <> fmBackStyleTransparent Then mBar.BackStyle = fmBackStyleTransparent
+        Else
+            If mBar.BackStyle <> fmBackStyleOpaque Then mBar.BackStyle = fmBackStyleOpaque
+        End If
+    End If
     If Not mTitle Is Nothing Then mTitle.ForeColor = mHeaderFontColor
     If Not mArrow Is Nothing Then mArrow.ForeColor = mArrowColor
     ApplyContentBackground
