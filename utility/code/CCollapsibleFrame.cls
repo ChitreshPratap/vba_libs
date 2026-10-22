@@ -10,9 +10,13 @@ Attribute VB_Exposed = False
 Option Explicit
 
 '==============================================================================
-' Class   : CCollapsibleFrame   (v2 - custom colours, fonts, collapsible mode)
+' Class   : CCollapsibleFrame   (v3)
+'           v2   - custom colours, fonts, collapsible mode
+'           v2.1 - step trace, tooltip fix
+'           v3   - state-specific heading texts, icon position, custom icons
+'
 ' Purpose : Turns an EXISTING MSForms.Frame into a collapsible panel with a
-'           header bar (arrow + heading) and a content area.
+'           header bar (icon + heading) and a content area.
 '
 ' Rules   : - Frame Left/Top/Width/Height are never changed (verified after
 '             every operation).
@@ -21,13 +25,18 @@ Option Explicit
 '           - No API calls, no OnTime, no extra classes or modules.
 '
 ' Usage   : Keep the instance in a FORM-LEVEL variable (events stop if the
-'           object goes out of scope). Style properties can be set before
-'           or after Initialize; after Initialize they apply immediately.
+'           object goes out of scope). Every property can be set before or
+'           after Initialize; after Initialize it applies immediately.
 '
-'           Private mPanel As CCollapsibleFrame
-'           Set mPanel = New CCollapsibleFrame
-'           mPanel.HeaderColor = RGB(45, 55, 72)
-'           mPanel.Initialize Me.Frame1, "Customer Information"
+' Fallbacks (empty strings):
+'           ExpandedText  = ""  -> base heading (Initialize HeadingText / Heading)
+'           CollapsedText = ""  -> base heading
+'           base heading  = ""  -> "Details"
+'           ExpandedIcon  = ""  -> ChrW(&H25BC)  (down triangle)
+'           CollapsedIcon = ""  -> ChrW(&H25B6)  (right triangle)
+'
+' Unicode : The VBA editor is ANSI - typing a symbol such as a triangle in code becomes "?".
+'           Pass symbols with ChrW, e.g. panel.ExpandedIcon = ChrW(&H25B2).
 '==============================================================================
 
 '--- Defaults -----------------------------------------------------------------
@@ -46,16 +55,20 @@ Private Const DEFAULT_FONT_SIZE      As Single = 12
 Private Const MIN_FONT_SIZE          As Single = 6
 Private Const MAX_FONT_SIZE          As Single = 72
 
-Private Const ARROW_FONT             As String = "Marlett"  ' Standard Windows glyph font
-Private Const GLYPH_EXPANDED         As String = "6"        ' Marlett: down triangle
-Private Const GLYPH_COLLAPSED        As String = "4"        ' Marlett: right triangle
+Private Const DEFAULT_ICON_FONT      As String = "Segoe UI Symbol"  ' has the triangle symbols
+Private Const ICON_DOWN              As Long = &H25BC               ' down triangle
+Private Const ICON_RIGHT             As Long = &H25B6               ' right triangle
+
+Private Const POS_LEFT               As String = "Left"
+Private Const POS_RIGHT              As String = "Right"
 
 '--- Layout -------------------------------------------------------------------
-Private Const ARROW_LEFT             As Single = 6
+Private Const ICON_EDGE_PAD          As Single = 6          ' icon to bar edge
 Private Const MIN_ARROW_WIDTH        As Single = 14
-Private Const TITLE_GAP              As Single = 4
-Private Const TITLE_LEFT_NO_ARROW    As Single = 10
-Private Const RIGHT_PAD              As Single = 8
+Private Const ICON_HPAD              As Single = 4          ' extra width around glyph
+Private Const TITLE_GAP              As Single = 4          ' icon to heading
+Private Const TITLE_LEFT_NO_ARROW    As Single = 10         ' heading left edge w/o icon
+Private Const RIGHT_PAD              As Single = 8          ' heading to right edge
 Private Const HEADER_VPAD            As Single = 4          ' min space above/below text
 
 '--- Error numbers ------------------------------------------------------------
@@ -63,16 +76,16 @@ Private Const ERR_NO_FRAME           As Long = vbObjectError + 513
 Private Const ERR_BAD_FONT_SIZE      As Long = vbObjectError + 514
 Private Const ERR_BAD_FONT_NAME      As Long = vbObjectError + 515
 Private Const ERR_INIT_FAILED        As Long = vbObjectError + 516
+Private Const ERR_BAD_ICON_POS       As Long = vbObjectError + 517
 
-'--- Diagnostics: prints each Initialize step to the Immediate window --------
-'    Set to False once everything works.
-Private Const TRACE_STEPS            As Boolean = True
+'--- Diagnostics: set True to print each Initialize step to the Immediate window
+Private Const TRACE_STEPS            As Boolean = False
 
 '--- Controls -----------------------------------------------------------------
 Private mFrame              As MSForms.Frame
 Private WithEvents mBar     As MSForms.Label    ' header background (clickable)
 Attribute mBar.VB_VarHelpID = -1
-Private WithEvents mArrow   As MSForms.Label    ' arrow glyph (clickable)
+Private WithEvents mArrow   As MSForms.Label    ' icon (clickable)
 Attribute mArrow.VB_VarHelpID = -1
 Private WithEvents mTitle   As MSForms.Label    ' heading text (clickable)
 Attribute mTitle.VB_VarHelpID = -1
@@ -97,6 +110,14 @@ Private mFontSize           As Single
 Private mFontBold           As Boolean
 Private mFontItalic         As Boolean
 Private mCollapsible        As Boolean
+
+Private mHeading            As String           ' base heading
+Private mExpandedText       As String           ' "" = use base heading
+Private mCollapsedText      As String           ' "" = use base heading
+Private mIconPosition       As String           ' "Left" / "Right"
+Private mExpandedIcon       As String           ' "" = default down triangle
+Private mCollapsedIcon      As String           ' "" = default right triangle
+Private mIconFontName       As String
 
 '--- Original geometry (never allowed to change) ------------------------------
 Private mLeft               As Single
@@ -125,6 +146,14 @@ Private Sub Class_Initialize()
     mFontItalic = False
     mCollapsible = True
     mRequestedHeight = DEFAULT_HEADER_HEIGHT
+
+    mHeading = vbNullString
+    mExpandedText = vbNullString
+    mCollapsedText = vbNullString
+    mIconPosition = POS_LEFT
+    mExpandedIcon = vbNullString        ' resolved to default by IconFor()
+    mCollapsedIcon = vbNullString
+    mIconFontName = DEFAULT_ICON_FONT
 End Sub
 
 Private Sub Class_Terminate()
@@ -153,11 +182,15 @@ Public Sub Initialize(ByVal FrameObject As MSForms.Frame, _
     Trace "Initialize: start (" & FrameObject.Name & ")"
 
     ' Re-initialisation: undo previous styling first (no duplicate headers).
-    ' Configured colours/fonts/collapsible are kept.
+    ' All configured properties are kept.
     If mInitialized Then Detach
 
     Set mFrame = FrameObject
     mPrefix = "ccf_" & mFrame.Name & "_"
+
+    ' A heading passed here becomes the base heading; an omitted one keeps
+    ' any base heading already set through the Heading property.
+    If Len(Trim$(HeadingText)) > 0 Then mHeading = HeadingText
 
     ' 1. Remember geometry and appearance
     Trace "Initialize: read frame properties"
@@ -192,7 +225,7 @@ Public Sub Initialize(ByVal FrameObject As MSForms.Frame, _
 
     ' 4. Build the header and apply all styling
     Trace "Initialize: build header"
-    BuildHeader HeadingText
+    BuildHeader
 
     ' 5. Initial state
     Set mVisibility = New Collection
@@ -200,10 +233,10 @@ Public Sub Initialize(ByVal FrameObject As MSForms.Frame, _
     mInitialized = True
     Trace "Initialize: apply colours"
     ApplyColors
-    Trace "Initialize: apply font"
-    ApplyTitleFont
-    Trace "Initialize: update arrow"
-    UpdateArrow
+    Trace "Initialize: apply fonts"
+    ApplyTitleFont          ' also applies icon font + layout
+    Trace "Initialize: update header state"
+    UpdateHeaderState
     Trace "Initialize: layout header"
     LayoutHeader
     Trace "Initialize: enforce geometry"
@@ -238,7 +271,7 @@ Public Sub Expand()
 
     Set mVisibility = New Collection
     mExpanded = True
-    UpdateArrow
+    UpdateHeaderState
     EnforceGeometry
 End Sub
 
@@ -263,7 +296,7 @@ Public Sub Collapse()
     ' Content area blends into the parent so only the header bar is seen
     mFrame.BackColor = mCollapsedBackColor
     mExpanded = False
-    UpdateArrow
+    UpdateHeaderState
     EnforceGeometry
 End Sub
 
@@ -282,17 +315,6 @@ End Property
 
 Public Property Get IsInitialized() As Boolean
     IsInitialized = mInitialized
-End Property
-
-Public Property Get Heading() As String
-    If Not mTitle Is Nothing Then Heading = mTitle.Caption
-End Property
-
-Public Property Let Heading(ByVal Value As String)
-    If mTitle Is Nothing Then Exit Property
-    If Len(Trim$(Value)) = 0 Then Value = DEFAULT_HEADING
-    mTitle.Caption = Value
-    LayoutHeader
 End Property
 
 Public Property Get Frame() As MSForms.Frame
@@ -321,6 +343,105 @@ Public Sub Detach()
     Set mVisibility = Nothing
     Set mFrame = Nothing
 End Sub
+
+'==============================================================================
+' PUBLIC API - HEADING TEXT
+'==============================================================================
+
+' Get: the text currently displayed (or that would be displayed).
+' Let: sets the BASE heading, used whenever ExpandedText/CollapsedText is "".
+Public Property Get Heading() As String
+    Heading = CurrentHeadingText()
+End Property
+
+Public Property Let Heading(ByVal Value As String)
+    mHeading = Value
+    UpdateTitleText
+End Property
+
+Public Property Get ExpandedText() As String
+    ExpandedText = mExpandedText
+End Property
+
+Public Property Let ExpandedText(ByVal Value As String)
+    mExpandedText = Value
+    UpdateTitleText          ' visible change only if currently expanded
+End Property
+
+Public Property Get CollapsedText() As String
+    CollapsedText = mCollapsedText
+End Property
+
+Public Property Let CollapsedText(ByVal Value As String)
+    mCollapsedText = Value
+    UpdateTitleText          ' visible change only if currently collapsed
+End Property
+
+'==============================================================================
+' PUBLIC API - ICON
+'==============================================================================
+
+Public Property Get IconPosition() As String
+    IconPosition = mIconPosition
+End Property
+
+Public Property Let IconPosition(ByVal Value As String)
+    Select Case LCase$(Trim$(Value))
+        Case "left":  mIconPosition = POS_LEFT
+        Case "right": mIconPosition = POS_RIGHT
+        Case Else
+            Err.Raise ERR_BAD_ICON_POS, "CCollapsibleFrame.IconPosition", _
+                      "IconPosition must be ""Left"" or ""Right"" (got """ & Value & _
+                      """). Current value kept: """ & mIconPosition & """."
+    End Select
+    LayoutHeader
+End Property
+
+' Shown while expanded (click collapses). "" = default down triangle.
+Public Property Get ExpandedIcon() As String
+    ExpandedIcon = IconFor(True)
+End Property
+
+Public Property Let ExpandedIcon(ByVal Value As String)
+    mExpandedIcon = Value
+    UpdateArrow
+    LayoutHeader             ' icon width may differ
+End Property
+
+' Shown while collapsed (click expands). "" = default right triangle.
+Public Property Get CollapsedIcon() As String
+    CollapsedIcon = IconFor(False)
+End Property
+
+Public Property Let CollapsedIcon(ByVal Value As String)
+    mCollapsedIcon = Value
+    UpdateArrow
+    LayoutHeader
+End Property
+
+' Font used to draw the icon. Default "Segoe UI Symbol" (covers triangles, + and -).
+' Set to "Marlett" with icons "6"/"4" to get the v1/v2 look.
+Public Property Get IconFontName() As String
+    IconFontName = mIconFontName
+End Property
+
+Public Property Let IconFontName(ByVal Value As String)
+    Value = Trim$(Value)
+    If Len(Value) = 0 Then
+        Err.Raise ERR_BAD_FONT_NAME, "CCollapsibleFrame.IconFontName", _
+                  "Icon font name cannot be empty."
+    End If
+
+    mIconFontName = Value
+    If mArrow Is Nothing Then Exit Property  ' applied at Initialize
+
+    If Not TrySetFontName(mArrow, Value) Then
+        Debug.Print "CCollapsibleFrame: icon font '" & Value & "' could not be applied; kept '" & _
+                    mArrow.Font.Name & "'."
+        mIconFontName = mArrow.Font.Name
+    End If
+    LayoutHeader
+End Property
 
 '==============================================================================
 ' PUBLIC API - COLOURS  (Long values, e.g. RGB(45, 55, 72))
@@ -380,8 +501,7 @@ Public Property Let HeaderFontName(ByVal Value As String)
     mFontName = Value
     If mTitle Is Nothing Then Exit Property   ' applied at Initialize
 
-    If Not TrySetTitleFontName(Value) Then
-        ' Keep the class working: fall back to whatever the label now uses
+    If Not TrySetFontName(mTitle, Value) Then
         Debug.Print "CCollapsibleFrame: font '" & Value & "' could not be applied; kept '" & _
                     mTitle.Font.Name & "'."
         mFontName = mTitle.Font.Name
@@ -434,13 +554,13 @@ Public Property Let Collapsible(ByVal Value As Boolean)
     If Not mInitialized Then Exit Property   ' applied at Initialize
 
     If Not mCollapsible And Not mExpanded Then Expand
-    UpdateArrow
-    LayoutHeader                              ' shows/hides arrow, shifts title
+    UpdateHeaderState
+    LayoutHeader                              ' shows/hides icon, shifts heading
 End Property
 
 '==============================================================================
-' EVENTS  (arrow, heading and bar all toggle the panel; Toggle respects
-'          the Collapsible setting)
+' EVENTS  (icon, heading and bar all toggle; Toggle respects Collapsible.
+'          Handlers never look at the displayed symbol.)
 '==============================================================================
 
 Private Sub mArrow_Click()
@@ -474,9 +594,7 @@ End Sub
 ' PRIVATE HELPERS - BUILD & STYLE
 '==============================================================================
 
-Private Sub BuildHeader(ByVal HeadingText As String)
-    If Len(Trim$(HeadingText)) = 0 Then HeadingText = DEFAULT_HEADING
-
+Private Sub BuildHeader()
     ' Background bar
     Trace "BuildHeader: add bar"
     Set mBar = mFrame.Controls.Add("Forms.Label.1", mPrefix & "Bar", True)
@@ -489,15 +607,14 @@ Private Sub BuildHeader(ByVal HeadingText As String)
         .Top = 0
     End With
 
-    ' Arrow (top-left)
-    Trace "BuildHeader: add arrow"
+    ' Icon
+    Trace "BuildHeader: add icon"
     Set mArrow = mFrame.Controls.Add("Forms.Label.1", mPrefix & "Arrow", True)
     With mArrow
         .BackStyle = fmBackStyleTransparent
         .BorderStyle = fmBorderStyleNone
         .SpecialEffect = fmSpecialEffectFlat
-        .Font.Name = ARROW_FONT
-        .Caption = GLYPH_EXPANDED
+        .Caption = IconFor(True)
         .TextAlign = fmTextAlignCenter
         .WordWrap = False
         .ControlTipText = "Expand / collapse"
@@ -510,12 +627,12 @@ Private Sub BuildHeader(ByVal HeadingText As String)
         .BackStyle = fmBackStyleTransparent
         .BorderStyle = fmBorderStyleNone
         .SpecialEffect = fmSpecialEffectFlat
-        .Caption = HeadingText
+        .Caption = HeadingFor(True)
         .TextAlign = fmTextAlignLeft
         .WordWrap = False
     End With
 
-    ' Header must sit above any existing content: bar first, then arrow/title
+    ' Header must sit above any existing content: bar first, then icon/title
     Trace "BuildHeader: z-order"
     HeaderCtl("Bar").ZOrder fmZOrderFront
     HeaderCtl("Arrow").ZOrder fmZOrderFront
@@ -531,6 +648,8 @@ Private Sub ApplyColors()
     End If
 End Sub
 
+' Applies heading font settings, the icon font, then re-lays out the header.
+' Never touches caption text.
 Private Sub ApplyTitleFont()
     If mTitle Is Nothing Then Exit Sub
 
@@ -542,44 +661,52 @@ Private Sub ApplyTitleFont()
     End With
 
     Trace "ApplyTitleFont: font name '" & mFontName & "'"
-    If Not TrySetTitleFontName(mFontName) Then
-        If Not TrySetTitleFontName(DEFAULT_FONT_NAME) Then
+    If Not TrySetFontName(mTitle, mFontName) Then
+        If Not TrySetFontName(mTitle, DEFAULT_FONT_NAME) Then
             Debug.Print "CCollapsibleFrame: could not apply font '" & mFontName & "'."
         End If
         mFontName = mTitle.Font.Name
     End If
 
-    ' Arrow scales with the heading size
-    Trace "ApplyTitleFont: arrow size"
-    If Not mArrow Is Nothing Then mArrow.Font.Size = mFontSize
+    If Not mArrow Is Nothing Then
+        Trace "ApplyTitleFont: icon font '" & mIconFontName & "'"
+        If Not TrySetFontName(mArrow, mIconFontName) Then
+            If Not TrySetFontName(mArrow, DEFAULT_ICON_FONT) Then
+                Debug.Print "CCollapsibleFrame: could not apply icon font '" & mIconFontName & "'."
+            End If
+            mIconFontName = mArrow.Font.Name
+        End If
+        mArrow.Font.Size = mFontSize          ' icon scales with the heading
+    End If
 
     LayoutHeader
 End Sub
 
 ' Returns False (and leaves the previous font in place) if the name is rejected.
-Private Function TrySetTitleFontName(ByVal fontName As String) As Boolean
+Private Function TrySetFontName(ByVal lbl As MSForms.Label, ByVal fontName As String) As Boolean
     Dim previous As String
 
-    previous = mTitle.Font.Name
+    previous = lbl.Font.Name
     On Error GoTo Failed
-    mTitle.Font.Name = fontName
-    TrySetTitleFontName = True
+    lbl.Font.Name = fontName
+    TrySetFontName = True
     Exit Function
 
 Failed:
     Err.Clear
     On Error Resume Next
-    mTitle.Font.Name = previous
+    lbl.Font.Name = previous
     On Error GoTo 0
-    TrySetTitleFontName = False
+    TrySetFontName = False
 End Function
 
-' Sizes and positions bar, arrow and title. Grows the header if the font
+' Sizes and positions bar, icon and heading. Grows the header if the font
 ' needs more room, so the heading always stays vertically centred.
 Private Sub LayoutHeader()
     Dim barWidth As Single
-    Dim arrowWidth As Single
+    Dim iconWidth As Single
     Dim titleLeft As Single
+    Dim titleRight As Single
     Dim h As Single
     Dim arrowCtl As MSForms.Control
 
@@ -588,13 +715,14 @@ Private Sub LayoutHeader()
     barWidth = mFrame.InsideWidth
     If barWidth <= 0 Then barWidth = mWidth
 
-    ' Measure natural label heights
-    Trace "LayoutHeader: measure text"
+    ' Measure heading height and the wider of the two icons
+    Trace "LayoutHeader: measure"
     FitToText mTitle
-    FitToText mArrow
+    iconWidth = MaxSingle(MIN_ARROW_WIDTH, WidestIcon() + ICON_HPAD)
 
     h = mRequestedHeight
     If mTitle.Height + 2 * HEADER_VPAD > h Then h = mTitle.Height + 2 * HEADER_VPAD
+    If mArrow.Height + 2 * HEADER_VPAD > h Then h = mArrow.Height + 2 * HEADER_VPAD
     If h > mHeight Then h = mHeight
     mHeaderHeight = h
 
@@ -604,34 +732,50 @@ Private Sub LayoutHeader()
     mBar.Width = barWidth
     mBar.Height = h
 
-    ' Arrow
-    arrowWidth = MaxSingle(MIN_ARROW_WIDTH, mFontSize + 4)
-    Trace "LayoutHeader: arrow visibility"
+    ' Icon visibility
+    Trace "LayoutHeader: icon visibility"
     Set arrowCtl = HeaderCtl("Arrow")
     If arrowCtl.Visible <> mCollapsible Then arrowCtl.Visible = mCollapsible
-    mArrow.Left = ARROW_LEFT
-    mArrow.Width = arrowWidth
+
+    ' Icon + heading positions
+    mArrow.Width = iconWidth
     mArrow.Top = MaxSingle(0, (h - mArrow.Height) / 2)
 
-    ' Title
-    If mCollapsible Then
-        titleLeft = ARROW_LEFT + arrowWidth + TITLE_GAP
-    Else
+    If Not mCollapsible Then
         titleLeft = TITLE_LEFT_NO_ARROW
+        titleRight = barWidth - RIGHT_PAD
+    ElseIf mIconPosition = POS_RIGHT Then
+        mArrow.Left = MaxSingle(0, barWidth - ICON_EDGE_PAD - iconWidth)
+        titleLeft = TITLE_LEFT_NO_ARROW
+        titleRight = mArrow.Left - TITLE_GAP
+    Else
+        mArrow.Left = ICON_EDGE_PAD
+        titleLeft = ICON_EDGE_PAD + iconWidth + TITLE_GAP
+        titleRight = barWidth - RIGHT_PAD
     End If
+
     mTitle.Left = titleLeft
-    mTitle.Width = MaxSingle(10, barWidth - titleLeft - RIGHT_PAD)
+    mTitle.Width = MaxSingle(10, titleRight - titleLeft)
     mTitle.Top = MaxSingle(0, (h - mTitle.Height) / 2)
 End Sub
 
-Private Sub Trace(ByVal stepName As String)
-    mStep = stepName
-    If TRACE_STEPS Then Debug.Print "CCollapsibleFrame | " & stepName
-End Sub
+' Natural width of the wider icon, so the icon box (and the heading next to
+' it) does not shift when the state changes. Leaves the current icon shown
+' and the label auto-sized to it (height is used for centring).
+Private Function WidestIcon() As Single
+    Dim w As Single
 
-' Extender view of a header control (Visible, ControlTipText, ZOrder live here).
-Private Function HeaderCtl(ByVal suffix As String) As MSForms.Control
-    Set HeaderCtl = mFrame.Controls(mPrefix & suffix)
+    mArrow.Caption = IconFor(True)
+    FitToText mArrow
+    w = mArrow.Width
+
+    mArrow.Caption = IconFor(False)
+    FitToText mArrow
+    If mArrow.Width > w Then w = mArrow.Width
+
+    mArrow.Caption = IconFor(mExpanded Or Not mInitialized)
+    FitToText mArrow
+    WidestIcon = w
 End Function
 
 ' Labels have no vertical alignment: size to the font to learn the text height.
@@ -641,18 +785,59 @@ Private Sub FitToText(ByVal lbl As MSForms.Label)
     lbl.AutoSize = False
 End Sub
 
+'==============================================================================
+' PRIVATE HELPERS - STATE TEXT / ICON
+'==============================================================================
+
+Private Sub UpdateHeaderState()
+    UpdateArrow
+    UpdateTitleText
+End Sub
+
 Private Sub UpdateArrow()
     If mArrow Is Nothing Then Exit Sub
-    If mExpanded Then
-        mArrow.Caption = GLYPH_EXPANDED
-    Else
-        mArrow.Caption = GLYPH_COLLAPSED
-    End If
+    mArrow.Caption = IconFor(mExpanded)
 End Sub
+
+Private Sub UpdateTitleText()
+    If mTitle Is Nothing Then Exit Sub
+    mTitle.Caption = CurrentHeadingText()
+End Sub
+
+Private Function CurrentHeadingText() As String
+    ' Before Initialize the panel counts as expanded.
+    CurrentHeadingText = HeadingFor(mExpanded Or Not mInitialized)
+End Function
+
+Private Function HeadingFor(ByVal expandedState As Boolean) As String
+    Dim s As String
+    If expandedState Then s = mExpandedText Else s = mCollapsedText
+    If Len(Trim$(s)) = 0 Then s = mHeading
+    If Len(Trim$(s)) = 0 Then s = DEFAULT_HEADING
+    HeadingFor = s
+End Function
+
+Private Function IconFor(ByVal expandedState As Boolean) As String
+    If expandedState Then
+        If Len(mExpandedIcon) > 0 Then IconFor = mExpandedIcon Else IconFor = ChrW$(ICON_DOWN)
+    Else
+        If Len(mCollapsedIcon) > 0 Then IconFor = mCollapsedIcon Else IconFor = ChrW$(ICON_RIGHT)
+    End If
+End Function
 
 '==============================================================================
 ' PRIVATE HELPERS - HOUSEKEEPING
 '==============================================================================
+
+Private Sub Trace(ByVal stepName As String)
+    mStep = stepName
+    If TRACE_STEPS Then Debug.Print "CCollapsibleFrame | " & stepName
+End Sub
+
+' Extender view of a header control (Visible, ZOrder live here).
+Private Function HeaderCtl(ByVal suffix As String) As MSForms.Control
+    Set HeaderCtl = mFrame.Controls(mPrefix & suffix)
+End Function
 
 Private Function IsHeaderControl(ByVal ctlName As String) As Boolean
     IsHeaderControl = (StrComp(Left$(ctlName, Len(mPrefix)), mPrefix, vbTextCompare) = 0)
