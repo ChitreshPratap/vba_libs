@@ -17,7 +17,7 @@ Option Explicit
 '             any implementing class can be assigned to it.
 '
 ' To add a new style: create a class, write "Implements IHeaderStyle", and
-' implement the two members below. Name every control you create
+' implement the three members below. Name every control you create
 ' NamePrefix & "<something>" so the container never treats it as content
 ' and can clean up leftovers.
 '==============================================================================
@@ -47,4 +47,11 @@ End Sub
 ' Removes every control this style created and drops its references.
 ' The style keeps its own settings, so it can be rendered again later.
 Public Sub Clear()
+End Sub
+
+' Hides (False) or shows again (True) the style's own controls without
+' deleting them. Called when the panel's header is hidden; while hidden a
+' style must not make its controls visible (e.g. on a property change).
+' Render is only called while the header is shown and implies visible.
+Public Sub SetVisible(ByVal Visible As Boolean)
 End Sub

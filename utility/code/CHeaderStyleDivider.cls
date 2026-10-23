@@ -64,6 +64,7 @@ Private mBarTop         As Single
 Private mBarHeight      As Single
 Private mTextLeft       As Single
 Private mTextRight      As Single
+Private mHidden         As Boolean      ' header hidden by the panel
 
 '--- Owned controls -----------------------------------------------------------
 Private mLeftLine       As MSForms.Label
@@ -202,6 +203,7 @@ Private Sub IHeaderStyle_Render(ByVal Host As Object, _
     mTextLeft = TextLeft
     mTextRight = TextRight
     mHasContext = True
+    mHidden = False                 ' Render is only called for a shown header
 
     Draw
 End Sub
@@ -211,6 +213,18 @@ Private Sub IHeaderStyle_Clear()
     Set mTitle = Nothing
     Set mHost = Nothing
     mHasContext = False
+    mHidden = False
+End Sub
+
+Private Sub IHeaderStyle_SetVisible(ByVal Visible As Boolean)
+    mHidden = Not Visible
+    If mHost Is Nothing Then Exit Sub
+    If Visible Then
+        Draw                        ' re-decides each line (may stay hidden if too short)
+    Else
+        If HostHasControl(mLeftName) Then mHost.Controls(mLeftName).Visible = False
+        If HostHasControl(mRightName) Then mHost.Controls(mRightName).Visible = False
+    End If
 End Sub
 
 '==============================================================================
@@ -227,6 +241,7 @@ Private Sub Draw()
     Dim lineTop As Single
 
     If Not mHasContext Then Exit Sub
+    If mHidden Then Exit Sub                 ' redrawn when shown again
     avail = mTextRight - mTextLeft
     If avail <= 0 Then Exit Sub
 

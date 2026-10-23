@@ -50,6 +50,7 @@ Private mBarLeft        As Single
 Private mBarTop         As Single
 Private mBarWidth       As Single
 Private mBarHeight      As Single
+Private mHidden         As Boolean      ' header hidden by the panel
 
 '--- Owned control ------------------------------------------------------------
 Private mLine           As MSForms.Label
@@ -156,6 +157,7 @@ Private Sub IHeaderStyle_Render(ByVal Host As Object, _
     mBarWidth = BarWidth
     mBarHeight = BarHeight
     mHasContext = True
+    mHidden = False                 ' Render is only called for a shown header
 
     Draw
 End Sub
@@ -165,6 +167,14 @@ Private Sub IHeaderStyle_Clear()
     Set mTitle = Nothing
     Set mHost = Nothing
     mHasContext = False
+    mHidden = False
+End Sub
+
+Private Sub IHeaderStyle_SetVisible(ByVal Visible As Boolean)
+    mHidden = Not Visible
+    If mLine Is Nothing Or mHost Is Nothing Then Exit Sub
+    If HostHasControl(mLineName) Then mHost.Controls(mLineName).Visible = Visible
+    If Visible Then Draw
 End Sub
 
 '==============================================================================
@@ -178,6 +188,7 @@ Private Sub Draw()
     Dim spaceBelowText As Single
 
     If Not mHasContext Then Exit Sub
+    If mHidden Then Exit Sub                 ' redrawn when shown again
     If mBarWidth <= 0 Or mBarHeight <= 0 Then Exit Sub
 
     EnsureLine

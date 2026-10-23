@@ -17,6 +17,15 @@ Option Explicit
 '           v4L  - Label container mode + ContainerTransparent
 '           v5   - pluggable header styles (HeaderStyle As IHeaderStyle)
 '           v5.1 - HeaderTransparent (header bar BackStyle = Transparent)
+'           v5.2 - HeaderVisible; no header is built while the heading is blank
+'
+' Header visibility:
+'           The header is shown only when HeaderVisible = True AND the text
+'           for the current state is not blank (ExpandedText/CollapsedText,
+'           falling back to the base heading from Initialize/Heading).
+'           Blank text  -> header controls are not created at all.
+'           Hidden      -> existing header controls are hidden, not deleted.
+'           Content, dimensions and Expand/Collapse/Toggle are unaffected.
 '
 ' Header styles (optional):
 '           Needs class modules IHeaderStyle (interface) plus any style such
@@ -161,6 +170,8 @@ Private mFontItalic         As Boolean
 Private mCollapsible        As Boolean
 Private mContainerTransparent As Boolean
 Private mHeaderTransparent  As Boolean
+Private mHeaderVisible      As Boolean          ' user setting (default True)
+Private mHeaderShown        As Boolean          ' header controls currently visible
 
 Private mHeading            As String           ' base heading
 Private mExpandedText       As String           ' "" = use base heading
@@ -199,6 +210,7 @@ Private Sub Class_Initialize()
     mCollapsible = True
     mContainerTransparent = False
     mHeaderTransparent = False
+    mHeaderVisible = True
     mRequestedHeight = DEFAULT_HEADER_HEIGHT
 
     mHeading = vbNullString
@@ -336,23 +348,18 @@ Public Sub Initialize(ByVal ContainerObject As Object, _
         End With
     End If
 
-    ' --- 4. Build the header (always on top) ---------------------------------
-    Trace "Initialize: build header"
-    BuildHeader
-
-    ' --- 5. Initial state ----------------------------------------------------
+    ' --- 4. Initial state ----------------------------------------------------
     Set mVisibility = New Collection
     Set mHiddenNames = New Collection
     mExpanded = True
+    mHeaderShown = False
     mInitialized = True
     Trace "Initialize: apply colours"
-    ApplyColors             ' includes content background / transparency
-    Trace "Initialize: apply fonts"
-    ApplyTitleFont          ' also applies icon font + layout
-    Trace "Initialize: update header state"
-    UpdateHeaderState
-    Trace "Initialize: layout header"
-    LayoutHeader
+    ApplyColors             ' content background / transparency (+ header if any)
+
+    ' --- 5. Header: built only if visible and the heading is not blank -------
+    Trace "Initialize: sync header"
+    SyncHeader
     Trace "Initialize: enforce geometry"
     EnforceGeometry
     Trace "Initialize: done"
@@ -475,6 +482,7 @@ Public Sub Detach()
     Expand
     If Not mStyle Is Nothing Then mStyle.Clear   ' style keeps its settings
     RemoveHeaderControls
+    mHeaderShown = False
 
     On Error Resume Next
     If mIsLabelMode Then
@@ -664,6 +672,29 @@ End Property
 Public Property Let HeaderTransparent(ByVal Value As Boolean)
     mHeaderTransparent = Value
     ApplyColors                     ' no-op before Initialize; applied there
+End Property
+
+'==============================================================================
+' PUBLIC API - HEADER VISIBILITY
+'==============================================================================
+
+' True  (default): header shown - provided the current heading text is not
+'                  blank. A blank heading never produces an empty header.
+' False          : header bar, heading, icon and style decoration are hidden
+'                  (not deleted). Content stays visible; the container keeps
+'                  its size. Expand / Collapse / Toggle still work in code.
+Public Property Get HeaderVisible() As Boolean
+    HeaderVisible = mHeaderVisible
+End Property
+
+Public Property Let HeaderVisible(ByVal Value As Boolean)
+    mHeaderVisible = Value
+    SyncHeader                      ' no-op before Initialize; applied there
+End Property
+
+' True when the header is actually on screen (visible setting + text present).
+Public Property Get HeaderShown() As Boolean
+    HeaderShown = mHeaderShown
 End Property
 
 ' True  : content area is transparent.
@@ -954,6 +985,7 @@ Private Sub LayoutHeader()
     Dim arrowCtl As MSForms.Control
 
     If mBar Is Nothing Or mTitle Is Nothing Or mArrow Is Nothing Then Exit Sub
+    If Not mHeaderShown Then Exit Sub          ' hidden header: laid out on show
 
     If mIsLabelMode Then
         barWidth = mWidth
@@ -1018,6 +1050,7 @@ End Sub
 Private Sub RenderStyle()
     If mStyle Is Nothing Then Exit Sub
     If mBar Is Nothing Or mTitle Is Nothing Or mArrow Is Nothing Then Exit Sub
+    If Not mHeaderShown Then Exit Sub
 
     Trace "RenderStyle"
     mStyle.Render mHost, mPrefix & STYLE_TAG, mTitle, _
@@ -1063,12 +1096,60 @@ Private Sub UpdateHeaderState()
     UpdateTitleText
 End Sub
 
+' Central header visibility logic. Creates the header the first time it is
+' needed, hides/shows it afterwards (never deletes it), and keeps any style's
+' decoration in step. Safe to call repeatedly.
+Private Sub SyncHeader()
+    Dim want As Boolean
+
+    If Not mInitialized Then Exit Sub
+    want = mHeaderVisible And HasHeadingText(mExpanded)
+
+    If want Then
+        If mBar Is Nothing Then
+            ' First time: build and style (BuildHeader adds visible controls)
+            Trace "SyncHeader: build header"
+            BuildHeader
+            mHeaderShown = True
+            ApplyColors
+            UpdateArrow
+            mTitle.Caption = CurrentHeadingText()
+            ApplyTitleFont                     ' fonts + LayoutHeader + style
+        ElseIf Not mHeaderShown Then
+            Trace "SyncHeader: show header"
+            mHeaderShown = True
+            HostCtl(mPrefix & "Bar").Visible = True
+            HostCtl(mPrefix & "Title").Visible = True
+            UpdateArrow
+            mTitle.Caption = CurrentHeadingText()
+            LayoutHeader                       ' sets icon visibility, renders style
+        End If
+    ElseIf mHeaderShown Then
+        Trace "SyncHeader: hide header"
+        mHeaderShown = False
+        If Not mStyle Is Nothing Then mStyle.SetVisible False
+        HostCtl(mPrefix & "Title").Visible = False
+        HostCtl(mPrefix & "Arrow").Visible = False
+        HostCtl(mPrefix & "Bar").Visible = False
+    End If
+End Sub
+
+' True if the given state has non-blank heading text (state text, else the
+' base heading). The "Details" fallback does not count.
+Private Function HasHeadingText(ByVal expandedState As Boolean) As Boolean
+    Dim s As String
+    If expandedState Then s = mExpandedText Else s = mCollapsedText
+    If Len(Trim$(s)) = 0 Then s = mHeading
+    HasHeadingText = (Len(Trim$(s)) > 0)
+End Function
+
 Private Sub UpdateArrow()
     If mArrow Is Nothing Then Exit Sub
     mArrow.Caption = IconFor(mExpanded)
 End Sub
 
 Private Sub UpdateTitleText()
+    SyncHeader              ' text may have become blank / non-blank
     If mTitle Is Nothing Then Exit Sub
     mTitle.Caption = CurrentHeadingText()
     RenderStyle             ' e.g. Divider re-fits lines to the new text width
