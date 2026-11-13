@@ -8,7 +8,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '===============================================================================
-' Class   : CTextBoxStyler  (v3)
+' Class   : CTextBoxStyler  (v4 - adds VerticalAlignment)
 ' Purpose : Apply a clean, modern look to an EXISTING MSForms TextBox, with
 '           independent left / top / right / bottom borders.
 '
@@ -44,6 +44,35 @@ Attribute VB_Exposed = False
 '   - ApplyStyle on another TextBox moves the reference to that box.
 '   - Detach / ResetDefaults release the reference without changing the box.
 '
+' Vertical alignment (v4)  -  VerticalAlignment = "Top" | "Center" | "Bottom"
+'   - MSForms TextBox has NO vertical-alignment property: single-line text is
+'     always drawn at the top. Because this class never moves or resizes the
+'     TextBox, centring is done with a helper "editor":
+'       * A borderless single-line TextBox named  tbsVA_<TextBoxName>  (Tag
+'         "CTextBoxStyler.Editor") is created in the same container, inside
+'         the TextBox's edges, at the computed Top / Center / Bottom position.
+'       * The user types in the editor. Its text is copied to the original
+'         TextBox on every change, and back again when your code sets
+'         TextBox1.Value - so  Me.TextBox1.Value  is always correct.
+'       * The original TextBox stays exactly where it is and keeps its
+'         background, borders and click area; its own text is drawn in its
+'         background colour so it does not show twice. Clicks and keys that
+'         land on it are passed to the editor. It leaves the tab order and the
+'         editor takes its TabIndex / TabStop.
+'   - "Top" (the default) creates nothing: the TextBox behaves exactly as v3.
+'   - Position is computed from the font size (line height ~1.25 x size), so
+'     it is accurate to about 1 point. VerticalAlignmentOffset (points, +down)
+'     fine-tunes it. VerticalAlignmentActive tells you if the editor is in use.
+'   - Not applied (falls back to native top) when the TextBox is MultiLine or
+'     is too short for one line of the font.
+'   - The editor needs this object to stay alive: declare the styler at FORM
+'     level. When the object is released (or Detach / ApplyStyle on another
+'     box), the editor is removed and the TextBox is restored to normal.
+'   - While centred: TextBox1_Change in your form still fires; TextBox1_Key*
+'     and Enter/Exit events fire on the editor, not on TextBox1. Change
+'     Enabled / Locked through IsEnabled / IsLocked (or call Refresh after
+'     changing them directly) so the editor follows.
+'
 ' Requires: Microsoft Forms 2.0 Object Library (added automatically to any
 '           project that contains a UserForm).
 '===============================================================================
@@ -78,10 +107,39 @@ Private Const ERR_NAME_CONFLICT As Long = vbObjectError + 517
 Private Const ERR_NO_CONTAINER  As Long = vbObjectError + 518
 Private Const ERR_BORDER_LENGTH As Long = vbObjectError + 519
 Private Const ERR_BORDER_ANCHOR As Long = vbObjectError + 520
+Private Const ERR_VALIGN        As Long = vbObjectError + 521
+Private Const ERR_VALIGN_OFFSET As Long = vbObjectError + 522
+
+'--- Vertical alignment --------------------------------------------------------
+Private Const VALIGN_TOP    As Long = 0
+Private Const VALIGN_CENTER As Long = 1
+Private Const VALIGN_BOTTOM As Long = 2
+
+Private Const EDITOR_TAG    As String = "CTextBoxStyler.Editor"
+Private Const EDITOR_PREFIX As String = "tbsVA_"
+
+' Font metrics used to position the editor (points). A single-line MSForms
+' TextBox draws its text about 1.5pt below its top edge; one line of text is
+' about 1.25 x the font size high for common UI fonts.
+Private Const LINE_HEIGHT_FACTOR As Single = 1.25
+Private Const TEXT_TOP_MARGIN    As Single = 1.5
+Private Const TEXT_BOTTOM_MARGIN As Single = 1.5
+Private Const MAX_VALIGN_OFFSET  As Single = 20
 
 '--- Attached TextBox --------------------------------------------------------
-Private m_Target As MSForms.TextBox   ' typed reference (styling)
+Private WithEvents m_Target As MSForms.TextBox   ' typed reference (styling + sync events)
 Private m_Ctl    As Object            ' same object, late bound (Name/Parent/geometry)
+
+'--- Vertical-alignment editor (exists only while centring is active) ----------
+Private WithEvents m_Editor As MSForms.TextBox
+Private m_EditorCtl     As Object     ' same editor, late bound (Move/TabIndex/...)
+Private m_VAlign        As Long
+Private m_VOffset       As Single
+Private m_Syncing       As Boolean
+Private m_SavedEnabled  As Boolean    ' logical state of the TextBox while centred
+Private m_SavedLocked   As Boolean
+Private m_SavedTabStop  As Boolean
+Private m_SavedTabIndex As Long
 
 '--- Visual settings ----------------------------------------------------------
 Private m_BackColor         As Long
@@ -119,6 +177,9 @@ End Sub
 Private Sub Class_Terminate()
     ' Styling and border helpers intentionally stay on the form after this
     ' object is released, so a local variable in UserForm_Initialize works.
+    ' The vertical-alignment editor cannot work without this object (it keeps
+    ' the text in sync), so it is removed and the TextBox restored instead.
+    RemoveEditor
     Set m_Target = Nothing
     Set m_Ctl = Nothing
 End Sub
@@ -147,6 +208,8 @@ Public Sub ResetDefaults()
     m_PasswordChar = Empty
     m_Enabled = Empty
     m_Locked = Empty
+    m_VAlign = VALIGN_TOP
+    m_VOffset = 0
 
     For i = tbsLeft To tbsBottom
         m_BVisible(i) = False
@@ -159,8 +222,10 @@ End Sub
 
 '-------------------------------------------------------------------------------
 ' Stops live updates to the attached TextBox. Its styling and borders remain.
+' A vertical-alignment editor is removed (the text stays in the TextBox).
 '-------------------------------------------------------------------------------
 Public Sub Detach()
+    RemoveEditor
     Set m_Target = Nothing
     Set m_Ctl = Nothing
 End Sub
@@ -188,6 +253,13 @@ Public Function ApplyStyle(ByVal TargetTextBox As Object, _
         ReportError "Expected an MSForms TextBox, but received an object of type '" & _
                     TypeName(TargetTextBox) & "'."
         Exit Function
+    End If
+
+    ' Moving to a different TextBox: release the editor of the previous one.
+    If Not m_Ctl Is Nothing Then
+        If StrComp(SafeName(m_Ctl), SafeName(TargetTextBox), vbTextCompare) <> 0 Then
+            RemoveEditor
+        End If
     End If
 
     Set m_Target = TargetTextBox
@@ -279,7 +351,8 @@ Private Sub ApplyIfAttached()
 End Sub
 
 '-------------------------------------------------------------------------------
-' One full styling pass: visuals, borders, then a geometry check.
+' One full styling pass: visuals, borders, vertical alignment, then a
+' geometry check.
 '-------------------------------------------------------------------------------
 Private Function StyleTarget() As Boolean
     Dim l0 As Single, t0 As Single, w0 As Single, h0 As Single
@@ -288,8 +361,13 @@ Private Function StyleTarget() As Boolean
 
     l0 = m_Ctl.Left: t0 = m_Ctl.Top: w0 = m_Ctl.Width: h0 = m_Ctl.Height
 
+    ' While centred, the TextBox may be temporarily enabled/unlocked by the
+    ' editor logic; put its real state back before the visuals are computed.
+    If Not m_Editor Is Nothing Then RestoreTargetState
+
     ApplyVisuals m_Target
     UpdateBorders
+    UpdateVerticalAlignment
 
     If m_Ctl.Left <> l0 Or m_Ctl.Top <> t0 Or _
        m_Ctl.Width <> w0 Or m_Ctl.Height <> h0 Then
@@ -514,6 +592,258 @@ Private Function GetBorderLabel(ByVal side As Long, _
 
     Set GetBorderLabel = lbl
 End Function
+
+'===============================================================================
+' Vertical alignment engine (v4)
+'-------------------------------------------------------------------------------
+' Never writes the TextBox's Left / Top / Width / Height. Only the helper
+' editor is positioned.
+'===============================================================================
+Private Sub UpdateVerticalAlignment()
+    Dim inset As Single
+    Dim innerTop As Single, innerHeight As Single
+    Dim lineHeight As Single, needed As Single
+    Dim edTop As Single, maxTop As Single
+
+    If m_VAlign = VALIGN_TOP Or m_Target.MultiLine Then
+        RemoveEditor
+        Exit Sub
+    End If
+
+    inset = NativeBorderInset()
+    innerTop = m_Ctl.Top + inset
+    innerHeight = m_Ctl.Height - 2 * inset
+    lineHeight = CSng(m_Target.Font.Size) * LINE_HEIGHT_FACTOR
+    needed = TEXT_TOP_MARGIN + lineHeight + TEXT_BOTTOM_MARGIN
+
+    ' Too short for one line: native top alignment is already the best fit.
+    If needed >= innerHeight Then
+        RemoveEditor
+        Exit Sub
+    End If
+
+    ' edTop is the editor's top edge; its text starts TEXT_TOP_MARGIN below.
+    If m_VAlign = VALIGN_CENTER Then
+        edTop = innerTop + (innerHeight - lineHeight) / 2 - TEXT_TOP_MARGIN
+    Else
+        edTop = innerTop + innerHeight - TEXT_BOTTOM_MARGIN - lineHeight - TEXT_TOP_MARGIN
+    End If
+    edTop = edTop + m_VOffset
+
+    maxTop = innerTop + innerHeight - needed
+    If edTop > maxTop Then edTop = maxTop
+    If edTop < innerTop Then edTop = innerTop
+
+    EnsureEditor
+
+    ' Logical state = what the TextBox has after this styling pass.
+    m_SavedEnabled = m_Target.Enabled
+    m_SavedLocked = m_Target.Locked
+
+    StyleEditor
+    ' The editor runs from the computed line to the bottom of the inner area,
+    ' so descenders are never clipped. It never covers the native border.
+    m_EditorCtl.Move m_Ctl.Left + inset, edTop, m_Ctl.Width - 2 * inset, _
+                     innerTop + innerHeight - edTop
+    m_EditorCtl.ZOrder fmZOrderFront
+
+    ' Hide the original's own (top-aligned) text without touching .Value.
+    ' A disabled TextBox draws grey text whatever its ForeColor, so while
+    ' centred the disabled look is carried by the editor and the original is
+    ' kept enabled but Locked (it is out of the tab order).
+    m_Target.ForeColor = m_Target.BackColor
+    If Not m_SavedEnabled Then
+        m_Target.Enabled = True
+        m_Target.Locked = True
+    End If
+End Sub
+
+' Creates the editor if needed, taking over the TextBox's tab position.
+Private Sub EnsureEditor()
+    Dim nm As String
+    Dim existing As Object
+    Dim ctl As Object
+
+    If Not m_Editor Is Nothing Then Exit Sub
+
+    If Not IsSupportedContainer() Then
+        Err.Raise ERR_NO_CONTAINER, "CTextBoxStyler", _
+            "Vertical alignment needs the TextBox to sit on a UserForm, Frame or Page; " & _
+            "its container is '" & TypeName(m_Ctl.Parent) & "'."
+    End If
+
+    nm = EditorName()
+    Set existing = FindSibling(nm)
+    If Not existing Is Nothing Then
+        If TypeOf existing Is MSForms.TextBox And existing.Tag = EDITOR_TAG Then
+            m_Ctl.Parent.Controls.Remove nm          ' stale editor from an old instance
+        Else
+            Err.Raise ERR_NAME_CONFLICT, "CTextBoxStyler", _
+                "A control named '" & nm & "' already exists and was not created by CTextBoxStyler."
+        End If
+    End If
+
+    m_SavedTabStop = m_Ctl.TabStop
+    m_SavedTabIndex = m_Ctl.TabIndex
+
+    Set ctl = m_Ctl.Parent.Controls.Add("Forms.TextBox.1", nm, True)
+    ctl.Tag = EDITOR_TAG
+    ctl.AutoSize = False
+    ctl.MultiLine = False
+    ctl.BorderStyle = fmBorderStyleNone
+    ctl.SpecialEffect = fmSpecialEffectFlat
+    ctl.SelectionMargin = False
+    ctl.Text = m_Target.Text
+    ctl.TabIndex = m_SavedTabIndex
+    ctl.TabStop = m_SavedTabStop
+
+    m_Ctl.TabStop = False
+
+    Set m_EditorCtl = ctl
+    Set m_Editor = ctl          ' events start only now
+End Sub
+
+' Copies the TextBox's current look and behaviour to the editor.
+Private Sub StyleEditor()
+    With m_Editor
+        With .Font
+            .Name = m_Target.Font.Name
+            .Size = m_Target.Font.Size
+            .Bold = m_Target.Font.Bold
+            .Italic = m_Target.Font.Italic
+            .Underline = m_Target.Font.Underline
+            .Strikethrough = m_Target.Font.Strikethrough
+        End With
+        .ForeColor = m_ForeColor
+        .TextAlign = m_Target.TextAlign
+        .PasswordChar = m_Target.PasswordChar
+        .MaxLength = m_Target.MaxLength
+        .EnterFieldBehavior = m_Target.EnterFieldBehavior
+        .BackStyle = m_Target.BackStyle
+        .BackColor = m_Target.BackColor
+        .Enabled = m_SavedEnabled
+        .Locked = m_SavedLocked
+    End With
+    m_EditorCtl.ControlTipText = m_Ctl.ControlTipText
+    m_EditorCtl.Visible = m_Ctl.Visible
+    If m_Editor.Text <> m_Target.Text Then
+        m_Syncing = True
+        m_Editor.Text = m_Target.Text
+        m_Syncing = False
+    End If
+End Sub
+
+' Puts the TextBox's real Enabled / Locked back (used at the start of a pass).
+Private Sub RestoreTargetState()
+    m_Target.Enabled = m_SavedEnabled
+    m_Target.Locked = m_SavedLocked
+End Sub
+
+' Removes the editor and returns the TextBox to normal top-aligned display.
+' Safe to call at any time, including while the form is unloading.
+Private Sub RemoveEditor()
+    Dim nm As String
+
+    If m_Editor Is Nothing Then Exit Sub
+    On Error Resume Next
+
+    If m_Target.Text <> m_Editor.Text Then
+        m_Syncing = True
+        m_Target.Text = m_Editor.Text
+        m_Syncing = False
+    End If
+
+    nm = SafeName(m_EditorCtl)
+    Set m_Editor = Nothing                  ' stop editor events first
+    Set m_EditorCtl = Nothing
+    m_Ctl.Parent.Controls.Remove nm
+
+    m_Target.Enabled = m_SavedEnabled
+    m_Target.Locked = m_SavedLocked
+    m_Target.ForeColor = m_ForeColor
+    m_Ctl.TabStop = m_SavedTabStop
+    m_Ctl.TabIndex = m_SavedTabIndex
+    m_Syncing = False
+End Sub
+
+' Width of the TextBox's own frame, so the editor sits inside it.
+Private Function NativeBorderInset() As Single
+    If AnyBorderVisible() Then
+        NativeBorderInset = 0               ' per-side borders are drawn outside
+    ElseIf m_Target.BorderStyle = fmBorderStyleSingle Then
+        NativeBorderInset = 1
+    ElseIf m_Target.SpecialEffect = fmSpecialEffectFlat Then
+        NativeBorderInset = 0
+    Else
+        NativeBorderInset = 2               ' sunken / raised / etched / bump
+    End If
+End Function
+
+Private Function EditorName() As String
+    EditorName = EDITOR_PREFIX & m_Ctl.Name
+End Function
+
+Private Sub FocusEditor()
+    On Error Resume Next
+    m_EditorCtl.SetFocus
+    m_Editor.SelStart = Len(m_Editor.Text)
+End Sub
+
+Private Function ParseVerticalAlignment(ByVal Value As String) As Long
+    Select Case LCase$(Trim$(Value))
+        Case "top":                         ParseVerticalAlignment = VALIGN_TOP
+        Case "center", "centre", "middle":  ParseVerticalAlignment = VALIGN_CENTER
+        Case "bottom":                      ParseVerticalAlignment = VALIGN_BOTTOM
+        Case Else
+            Err.Raise ERR_VALIGN, "CTextBoxStyler", _
+                "Invalid VerticalAlignment '" & Value & "'. Use ""Top"", ""Center"" or ""Bottom""."
+    End Select
+End Function
+
+'--- Text sync and focus hand-off ------------------------------------------------
+' Typing in the editor -> TextBox1.Value (TextBox1_Change in the form fires).
+Private Sub m_Editor_Change()
+    If m_Syncing Then Exit Sub
+    On Error GoTo Done
+    m_Syncing = True
+    If m_Target.Text <> m_Editor.Text Then m_Target.Text = m_Editor.Text
+Done:
+    m_Syncing = False
+End Sub
+
+' Code sets TextBox1.Value -> editor shows it.
+Private Sub m_Target_Change()
+    If m_Syncing Or m_Editor Is Nothing Then Exit Sub
+    On Error GoTo Done
+    m_Syncing = True
+    If m_Editor.Text <> m_Target.Text Then m_Editor.Text = m_Target.Text
+Done:
+    m_Syncing = False
+End Sub
+
+' A click on the original (above/below the editor) edits in the editor.
+Private Sub m_Target_MouseDown(ByVal Button As Integer, ByVal Shift As Integer, _
+                               ByVal X As Single, ByVal Y As Single)
+    If m_Editor Is Nothing Then Exit Sub
+    If m_Editor.Enabled Then FocusEditor
+End Sub
+
+' If the original gets focus another way (e.g. TextBox1.SetFocus in code),
+' the first typed character is moved into the editor instead of being lost.
+Private Sub m_Target_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
+    Dim ch As String
+    If m_Editor Is Nothing Then Exit Sub
+    If Not m_Editor.Enabled Then
+        KeyAscii.Value = 0
+        Exit Sub
+    End If
+    ch = ChrW$(KeyAscii.Value)
+    KeyAscii.Value = 0
+    FocusEditor
+    If m_Editor.Locked Or AscW(ch) < 32 Then Exit Sub
+    If m_Editor.MaxLength > 0 And Len(m_Editor.Text) >= m_Editor.MaxLength Then Exit Sub
+    m_Editor.SelText = ch
+End Sub
 
 '===============================================================================
 ' Helpers
@@ -785,6 +1115,42 @@ End Property
 Public Property Let TextAlign(ByVal Value As fmTextAlign)
     m_TextAlign = Value
     ApplyIfAttached
+End Property
+
+'--- Vertical alignment (v4) ------------------------------------------------------
+' "Top" (default, native) | "Center" ("Centre"/"Middle" accepted) | "Bottom".
+' Changes apply immediately to the attached TextBox. See header for details.
+Public Property Get VerticalAlignment() As String
+    Select Case m_VAlign
+        Case VALIGN_CENTER: VerticalAlignment = "Center"
+        Case VALIGN_BOTTOM: VerticalAlignment = "Bottom"
+        Case Else:          VerticalAlignment = "Top"
+    End Select
+End Property
+Public Property Let VerticalAlignment(ByVal Value As String)
+    m_VAlign = ParseVerticalAlignment(Value)
+    ApplyIfAttached
+End Property
+
+' Fine-tune in points (positive = down), -20 to 20. Default 0.
+' Useful for fonts whose line height differs from ~1.25 x size.
+Public Property Get VerticalAlignmentOffset() As Single
+    VerticalAlignmentOffset = m_VOffset
+End Property
+Public Property Let VerticalAlignmentOffset(ByVal Value As Single)
+    If Abs(Value) > MAX_VALIGN_OFFSET Then
+        Err.Raise ERR_VALIGN_OFFSET, "CTextBoxStyler", _
+            "VerticalAlignmentOffset must be between -" & MAX_VALIGN_OFFSET & _
+            " and " & MAX_VALIGN_OFFSET & " points."
+    End If
+    m_VOffset = Value
+    ApplyIfAttached
+End Property
+
+' True while the helper editor is in use. False for "Top", MultiLine boxes,
+' boxes too short for one line, or when no TextBox is attached.
+Public Property Get VerticalAlignmentActive() As Boolean
+    VerticalAlignmentActive = Not (m_Editor Is Nothing)
 End Property
 
 '--- Native (whole-box) border - used only when no per-side border is on -------

@@ -1,0 +1,1549 @@
+modStringUtils.bas
+______________________________________________
+Option Explicit
+
+'==============================================================================
+' modStringUtils  (REUSABLE)
+'==============================================================================
+
+' Makes labels/headers comparable: lower case, no spaces, _, -, ., :, tabs or
+' non-breaking spaces.  "Account Number:" and "account_number" -> "accountnumber"
+Public Function NormaliseKey(ByVal text As String) As String
+    Dim s As String
+    s = LCase$(text)
+    s = Replace(s, Chr$(160), "")
+    s = Replace(s, vbTab, "")
+    s = Replace(s, " ", "")
+    s = Replace(s, "_", "")
+    s = Replace(s, "-", "")
+    s = Replace(s, ".", "")
+    s = Replace(s, ":", "")
+    NormaliseKey = s
+End Function
+
+' True if text matches any of the "|"-separated aliases (via NormaliseKey).
+'   MatchesAny("Account No.", "Account Number|Account No") -> True
+Public Function MatchesAny(ByVal text As String, ByVal aliases As String) As Boolean
+    Dim a As Variant, key As String
+    key = NormaliseKey(text)
+    If Len(key) = 0 Then Exit Function
+    For Each a In Split(aliases, "|")
+        If key = NormaliseKey(CStr(a)) Then
+            MatchesAny = True
+            Exit Function
+        End If
+    Next a
+End Function
+
+' First alias of an alias list - used for messages.  "A|B|C" -> "A"
+Public Function PrimaryName(ByVal aliases As String) As String
+    PrimaryName = Split(aliases & "|", "|")(0)
+End Function
+
+' Joins two texts with a separator, skipping blanks.
+'   AppendText("", "a")  -> "a"
+'   AppendText("a", "b") -> "a; b"
+'   AppendText("a", "")  -> "a"
+Public Function AppendText(ByVal current As String, ByVal addition As String, _
+                           Optional ByVal separator As String = "; ") As String
+    If Len(addition) = 0 Then
+        AppendText = current
+    ElseIf Len(current) = 0 Then
+        AppendText = addition
+    Else
+        AppendText = current & separator & addition
+    End If
+End Function
+
+' Seconds -> "1 h 05 min", "12 min 30 s" or "45 s"
+Public Function FormatDuration(ByVal totalSeconds As Double) As String
+    Dim s As Long
+    s = CLng(totalSeconds)
+    If s >= 3600 Then
+        FormatDuration = s \ 3600 & " h " & Format((s Mod 3600) \ 60, "00") & " min"
+    ElseIf s >= 60 Then
+        FormatDuration = s \ 60 & " min " & Format(s Mod 60, "00") & " s"
+    Else
+        FormatDuration = s & " s"
+    End If
+End Function
+______________________________________________________________________
+
+modReconConsolidator.bas
+
+Option Explicit
+
+'==============================================================================
+' modReconConsolidator  (RECON-SPECIFIC - entry point)
+' Reads from every Excel file in a chosen folder:
+'   Reconcilliation_Page!G29  -> Variance
+'   Recon_Parameters!D25      -> glAccountNumber
+' Writes to this workbook:
+'   "Result" sheet : one row per file
+'   "Errors" sheet : one row per problem (missing sheet, open failure,
+'                    blank/#error cell, any unexpected runtime error)
+' A problem in one file never stops the run; it is logged and the loop moves on.
+'
+' Depends on:
+'   modFileUtils, modExcelUtils, modStringUtils                 (reusable)
+'   clsAppState, clsProgress, clsCellResult, clsErrorLog        (reusable)
+'   clsReconRecord                                              (recon-specific)
+'==============================================================================
+
+'---- Configuration (change here only) -----------------------------------------
+Private Const SHEET_RECON As String = "Reconcilliation_Page"
+Private Const CELL_VARIANCE As String = "G29"
+Private Const SHEET_PARAMS As String = "Recon_Parameters"
+Private Const CELL_GL As String = "D25"
+
+Private Const OUTPUT_SHEET As String = "Result"
+Private Const ERRORS_SHEET As String = "Errors"
+Private Const INCLUDE_SUBFOLDERS As Boolean = False
+
+Private Const STATUS_SUCCESS As String = "Success"   ' both values read
+Private Const STATUS_WARNING As String = "Warning"   ' sheets found, a cell blank or #error
+Private Const STATUS_PARTIAL As String = "Partial"   ' one sheet missing
+Private Const STATUS_FAILED As String = "Failed"     ' can't open, both sheets missing, or runtime error
+
+' ErrorType values written to the Errors sheet
+Private Const ERR_OPEN As String = "File open failed"
+Private Const ERR_SHEET_MISSING As String = "Worksheet missing"
+Private Const ERR_CELL_ERROR As String = "Cell error value"
+Private Const ERR_BLANK_CELL As String = "Blank cell"
+Private Const ERR_RUNTIME As String = "Unexpected error"
+Private Const ERR_FATAL As String = "Run stopped"
+
+'---- Entry point ---------------------------------------------------------------
+Public Sub ConsolidateReconFiles()
+    Dim folderPath As String
+    folderPath = PickFolder("Select the folder containing the recon files")
+    If Len(folderPath) = 0 Then Exit Sub
+
+    Dim files As Collection
+    Set files = GetFiles(folderPath, EXCEL_EXTENSIONS, INCLUDE_SUBFOLDERS, ThisWorkbook.FullName)
+    If files.Count = 0 Then
+        MsgBox "No Excel files found in:" & vbCrLf & folderPath, vbExclamation
+        Exit Sub
+    End If
+
+    Dim app As clsAppState, progress As clsProgress
+    Dim records As Collection, errLog As clsErrorLog, i As Long
+    Set app = New clsAppState
+    Set progress = New clsProgress
+    Set records = New Collection
+    Set errLog = New clsErrorLog
+
+    On Error GoTo CleanFail
+    app.EnterFastMode
+    progress.Start files.Count, "Consolidating recon files"
+
+    For i = 1 To files.Count
+        records.Add ProcessFile(CStr(files(i)), errLog)
+        progress.Tick i
+    Next i
+
+    WriteResults records, errLog
+    progress.Finish
+    app.Restore
+    ShowSummary records, errLog, progress.ElapsedSeconds
+    Exit Sub
+
+CleanFail:
+    ' Should be rare - per-file problems are handled inside ProcessFile.
+    Dim errText As String
+    errText = "Error " & Err.Number & ": " & Err.Description
+    Resume SavePartial                    ' leave error-handler state first
+
+SavePartial:
+    On Error Resume Next
+    errLog.Add "(run)", ERR_FATAL, "Stopped at file " & i & " of " & files.Count & ". " & errText
+    WriteResults records, errLog          ' keep whatever was collected
+    On Error GoTo 0
+    progress.Finish
+    app.Restore
+    MsgBox "Run stopped at file " & i & " of " & files.Count & ":" & vbCrLf & errText & vbCrLf & vbCrLf & _
+           "Rows saved to '" & OUTPUT_SHEET & "': " & records.Count & vbCrLf & _
+           "See '" & ERRORS_SHEET & "' for details.", vbCritical
+End Sub
+
+'---- One file -> one record (never raises) -----------------------------------------
+Private Function ProcessFile(ByVal fullPath As String, ByVal errLog As clsErrorLog) As clsReconRecord
+    Dim rec As clsReconRecord, wb As Workbook
+    Set rec = New clsReconRecord
+    rec.FileName = GetFileName(fullPath)
+    rec.UpdatedTime = Now
+
+    On Error GoTo FileFail
+
+    Dim openErr As String
+    Set wb = OpenWorkbookSafe(fullPath, openErr)
+    If wb Is Nothing Then
+        rec.Status = STATUS_FAILED
+        rec.AddError "Could not open file: " & openErr
+        errLog.Add rec.FileName, ERR_OPEN, openErr, fullPath
+        Set ProcessFile = rec
+        Exit Function
+    End If
+
+    Dim varianceCell As clsCellResult, glCell As clsCellResult
+    Set varianceCell = ReadCell(wb, SHEET_RECON, CELL_VARIANCE)
+    Set glCell = ReadCell(wb, SHEET_PARAMS, CELL_GL, asDisplayedText:=True)
+    CloseWorkbookSafe wb
+
+    rec.Variance = varianceCell.Value
+    rec.GLAccountNumber = glCell.Value
+    rec.AddError varianceCell.Message
+    rec.AddError glCell.Message
+    rec.Status = EvaluateStatus(varianceCell, glCell)
+
+    LogCellIssue errLog, rec.FileName, fullPath, varianceCell
+    LogCellIssue errLog, rec.FileName, fullPath, glCell
+
+    Set ProcessFile = rec
+    Exit Function
+
+FileFail:
+    Dim errText As String
+    errText = "Error " & Err.Number & ": " & Err.Description
+    CloseWorkbookSafe wb
+    rec.Status = STATUS_FAILED
+    rec.AddError errText
+    errLog.Add rec.FileName, ERR_RUNTIME, errText, fullPath
+    Set ProcessFile = rec
+End Function
+
+' Adds one Errors-sheet row for a cell read that was not clean.
+Private Sub LogCellIssue(ByVal errLog As clsErrorLog, ByVal fileName As String, _
+                         ByVal fullPath As String, ByVal cell As clsCellResult)
+    If cell.IsOk Then Exit Sub
+
+    Dim errType As String
+    If Not cell.SheetFound Then
+        errType = ERR_SHEET_MISSING
+    ElseIf cell.IsErrorValue Then
+        errType = ERR_CELL_ERROR
+    Else
+        errType = ERR_BLANK_CELL
+    End If
+    errLog.Add fileName, errType, cell.Message, fullPath
+End Sub
+
+' Works for any number of cells, so adding a third field needs no change here.
+Private Function EvaluateStatus(ParamArray cellResults() As Variant) As String
+    Dim i As Long, missing As Long, warnings As Long, total As Long
+    Dim c As clsCellResult
+
+    For i = LBound(cellResults) To UBound(cellResults)
+        Set c = cellResults(i)
+        total = total + 1
+        If Not c.SheetFound Then
+            missing = missing + 1
+        ElseIf Not c.IsOk Then
+            warnings = warnings + 1
+        End If
+    Next i
+
+    Select Case True
+        Case missing = total: EvaluateStatus = STATUS_FAILED
+        Case missing > 0:     EvaluateStatus = STATUS_PARTIAL
+        Case warnings > 0:    EvaluateStatus = STATUS_WARNING
+        Case Else:            EvaluateStatus = STATUS_SUCCESS
+    End Select
+End Function
+
+'---- Output ---------------------------------------------------------------------
+Private Function OutputHeaders() As Variant
+    OutputHeaders = Array("FileName", "Variance", "glAccountNumber", _
+                          "Status", "Error message", "Updatedtime")
+End Function
+
+Private Function OutputFormats() As Variant
+    '                    FileName  Variance                    GL   Status  Error  Updatedtime
+    OutputFormats = Array("", "#,##0.00;[Red]-#,##0.00", "@", "", "", "dd-mmm-yyyy hh:mm:ss")
+End Function
+
+Private Sub WriteResults(ByVal records As Collection, ByVal errLog As clsErrorLog)
+    WriteTable GetOrCreateSheet(ThisWorkbook, OUTPUT_SHEET), OutputHeaders, _
+               RecordsToArray(records), OutputFormats
+    errLog.WriteToSheet GetOrCreateSheet(ThisWorkbook, ERRORS_SHEET)
+    ThisWorkbook.Worksheets(OUTPUT_SHEET).Activate
+End Sub
+
+Private Function RecordsToArray(ByVal records As Collection) As Variant
+    Dim colCount As Long, data() As Variant, r As Long, c As Long, row As Variant
+    Dim rec As clsReconRecord
+
+    colCount = UBound(OutputHeaders) + 1
+    If records.Count = 0 Then Exit Function
+    ReDim data(1 To records.Count, 1 To colCount)
+
+    For Each rec In records
+        r = r + 1
+        row = rec.ToRow
+        For c = 0 To colCount - 1
+            data(r, c + 1) = row(c)
+        Next c
+    Next rec
+
+    RecordsToArray = data
+End Function
+
+Private Sub ShowSummary(ByVal records As Collection, ByVal errLog As clsErrorLog, _
+                        ByVal elapsedSeconds As Double)
+    Dim rec As clsReconRecord, ok As Long, wn As Long, pt As Long, fl As Long
+    For Each rec In records
+        Select Case rec.Status
+            Case STATUS_SUCCESS: ok = ok + 1
+            Case STATUS_WARNING: wn = wn + 1
+            Case STATUS_PARTIAL: pt = pt + 1
+            Case Else:           fl = fl + 1
+        End Select
+    Next rec
+
+    MsgBox "Processed " & records.Count & " files in " & FormatDuration(elapsedSeconds) & vbCrLf & vbCrLf & _
+           STATUS_SUCCESS & ": " & ok & vbCrLf & _
+           STATUS_WARNING & ": " & wn & vbCrLf & _
+           STATUS_PARTIAL & ": " & pt & vbCrLf & _
+           STATUS_FAILED & ":  " & fl & vbCrLf & vbCrLf & _
+           "Errors logged: " & errLog.Count & " (in " & errLog.FileCount & " files) - see '" & _
+           ERRORS_SHEET & "' sheet", vbInformation, "Consolidation complete"
+End Sub
+__________________________________________________________
+
+modOpenItemConsolidator.bas
+
+Option Explicit
+
+'==============================================================================
+' modOpenItemsConsolidator  (OPEN-ITEMS SPECIFIC - entry point)
+'
+' For every Excel file in a chosen folder:
+'   1. Reads Account Name / Account Number from Recon_Parameters
+'      (label in column B, value in column C)
+'   2. Reads every data row (headers on row 5) from the 4 unreconciled sheets:
+'        Unrec_Bank_Stat_Dr, Unrec_Bank_Stat_Cr   -> "Transaction Amount Bank"
+'        Unrec_System_Dr,    Unrec_System_Cr      -> "Transaction Amount System"
+'   3. Writes everything to sheet "Open_Items" in this workbook.
+'
+' Problems never stop the run. Each one becomes a row in "Open_Items" (Error
+' Message + Comment filled in) and a row in "Open_Items_Errors":
+'   - file cannot be opened
+'   - worksheet missing
+'   - worksheet has headers only (no data)
+'   - required column header missing
+'   - Account Name / Number label missing
+'   - blank or non-numeric Transaction Amount
+'   - any unexpected runtime error
+'
+' Depends on:
+'   modFileUtils, modExcelUtils, modStringUtils                         (reusable)
+'   clsAppState, clsProgress, clsErrorLog, clsSheetTable, clsRowBuffer  (reusable)
+'==============================================================================
+
+'---- Configuration (change here only) -------------------------------------------
+' Sheet names accept several spellings separated by "|". Matching ignores case,
+' spaces, "_" and "-". Add any spelling your files actually use.
+Private Const SHEET_BANK_DR As String = "Unrec_Bank_Stat_Dr|Unrec_Bank_State_Dr|Unrec_Bank_Statement_Dr"
+Private Const SHEET_BANK_CR As String = "Unrec_Bank_Stat_Cr|Unrec_Bank_State_Cr|Unrec_Bank_Statement_Cr"
+Private Const SHEET_SYS_DR As String = "Unrec_System_Dr|Unrec_Stem_Dr|Unrec_Sys_Dr"
+Private Const SHEET_SYS_CR As String = "Unrec_System_Cr|Unrec_Stem_Cr|Unrec_Sys_Cr"
+Private Const HEADER_ROW As Long = 5
+
+Private Const SHEET_PARAMS As String = "Recon_Parameters"
+Private Const PARAM_LABEL_COL As String = "B"
+Private Const PARAM_VALUE_COL As String = "C"
+Private Const LABEL_ACCOUNT_NAME As String = "Account Name"
+Private Const LABEL_ACCOUNT_NUMBER As String = "Account Number|Account No|Account Num"
+
+' Source column headers (aliases separated by "|")
+Private Const HDR_BANK_DATE As String = "Bank Date|Date"
+Private Const HDR_AMOUNT As String = "Transaction Amount|Amount"
+Private Const HDR_DESCRIPTION As String = "Transaction Description|Description"
+Private Const HDR_CURRENCY As String = "Currency|Ccy"
+Private Const HDR_STATUS As String = "Status"
+
+Private Const OUTPUT_SHEET As String = "Open_Items"
+Private Const ERRORS_SHEET As String = "Open_Items_Errors"
+Private Const INCLUDE_SUBFOLDERS As Boolean = False
+Private Const INCLUDE_TRACE_COLUMNS As Boolean = True   ' File Name / Source Sheet / Source Row
+Private Const MAX_EXCEL_ROWS As Long = 1048575           ' data rows below the header
+
+Private Const SIDE_BANK As String = "Bank"
+Private Const SIDE_SYSTEM As String = "System"
+
+' Error Message values (filterable)
+Private Const ERR_OPEN As String = "File open failed"
+Private Const ERR_SHEET_MISSING As String = "Worksheet missing"
+Private Const ERR_NO_DATA As String = "No data"
+Private Const ERR_NO_HEADER As String = "Header row missing"
+Private Const ERR_COLUMN_MISSING As String = "Column missing"
+Private Const ERR_ACCOUNT_INFO As String = "Account info missing"
+Private Const ERR_AMOUNT As String = "Invalid amount"
+Private Const ERR_RUNTIME As String = "Unexpected error"
+Private Const ERR_FATAL As String = "Run stopped"
+
+' Output column positions (0-based, order of OutputHeaders)
+Private Enum OutCol
+    ocAccountName = 0
+    ocAccountNumber
+    ocBankDate
+    ocAmountBank
+    ocAmountSystem
+    ocCurrency
+    ocolDescription
+    ocolStatus
+    ocErrorMessage
+    ocComment
+    ocCommentUpdatedOn
+    ocFileName
+    ocSourceSheet
+    ocSourceRow
+    ocLast = ocSourceRow
+End Enum
+
+' Everything ProcessFile needs about the current file
+Private Type FileContext
+    FullPath As String
+    FileName As String
+    AccountName As String
+    AccountNumber As String
+End Type
+
+' Run counters for the summary
+Private mItemRows As Long      ' open-item rows written
+Private mIssueRows As Long     ' problem-only rows written
+
+'---- Entry point -------------------------------------------------------------------
+Public Sub ConsolidateOpenItems()
+    Dim folderPath As String
+    folderPath = PickFolder("Select the folder containing the recon files")
+    If Len(folderPath) = 0 Then Exit Sub
+
+    Dim files As Collection
+    Set files = GetFiles(folderPath, EXCEL_EXTENSIONS, INCLUDE_SUBFOLDERS, ThisWorkbook.FullName)
+    If files.Count = 0 Then
+        MsgBox "No Excel files found in:" & vbCrLf & folderPath, vbExclamation
+        Exit Sub
+    End If
+
+    Dim app As clsAppState, progress As clsProgress
+    Dim buffer As clsRowBuffer, errLog As clsErrorLog, i As Long
+    Set app = New clsAppState
+    Set progress = New clsProgress
+    Set buffer = New clsRowBuffer
+    Set errLog = New clsErrorLog
+    buffer.Init UBound(OutputHeaders) + 1, 5000
+    mItemRows = 0
+    mIssueRows = 0
+
+    On Error GoTo CleanFail
+    app.EnterFastMode
+    progress.Start files.Count, "Consolidating open items"
+
+    For i = 1 To files.Count
+        ProcessFile CStr(files(i)), buffer, errLog
+        progress.Tick i
+    Next i
+
+    WriteResults buffer, errLog
+    progress.Finish
+    app.Restore
+    ShowSummary files.Count, buffer, errLog, progress.ElapsedSeconds
+    Exit Sub
+
+CleanFail:
+    Dim errText As String
+    errText = "Error " & Err.Number & ": " & Err.Description
+    Resume SavePartial
+
+SavePartial:
+    On Error Resume Next
+    errLog.Add "(run)", ERR_FATAL, "Stopped at file " & i & " of " & files.Count & ". " & errText
+    WriteResults buffer, errLog
+    On Error GoTo 0
+    progress.Finish
+    app.Restore
+    MsgBox "Run stopped at file " & i & " of " & files.Count & ":" & vbCrLf & errText & vbCrLf & vbCrLf & _
+           "Rows saved to '" & OUTPUT_SHEET & "': " & buffer.Count, vbCritical
+End Sub
+
+'---- One file (never raises) ----------------------------------------------------------
+Private Sub ProcessFile(ByVal fullPath As String, ByVal buffer As clsRowBuffer, _
+                        ByVal errLog As clsErrorLog)
+    Dim ctx As FileContext, wb As Workbook, openErr As String
+    ctx.FullPath = fullPath
+    ctx.FileName = GetFileName(fullPath)
+
+    On Error GoTo FileFail
+
+    Set wb = OpenWorkbookSafe(fullPath, openErr)
+    If wb Is Nothing Then
+        AddIssueRow buffer, errLog, ctx, ERR_OPEN, _
+            "Workbook '" & ctx.FileName & "' could not be opened: " & openErr
+        Exit Sub
+    End If
+
+    ReadAccountInfo wb, ctx, buffer, errLog
+
+    ProcessSourceSheet wb, SHEET_BANK_DR, SIDE_BANK, ctx, buffer, errLog
+    ProcessSourceSheet wb, SHEET_BANK_CR, SIDE_BANK, ctx, buffer, errLog
+    ProcessSourceSheet wb, SHEET_SYS_DR, SIDE_SYSTEM, ctx, buffer, errLog
+    ProcessSourceSheet wb, SHEET_SYS_CR, SIDE_SYSTEM, ctx, buffer, errLog
+
+    CloseWorkbookSafe wb
+    Exit Sub
+
+FileFail:
+    Dim errText As String
+    errText = "Error " & Err.Number & ": " & Err.Description
+    CloseWorkbookSafe wb
+    AddIssueRow buffer, errLog, ctx, ERR_RUNTIME, _
+        "Workbook '" & ctx.FileName & "' stopped with " & errText
+End Sub
+
+'---- Recon_Parameters -> Account Name / Number ----------------------------------------
+Private Sub ReadAccountInfo(ByVal wb As Workbook, ByRef ctx As FileContext, _
+                            ByVal buffer As clsRowBuffer, ByVal errLog As clsErrorLog)
+    Dim ws As Worksheet, foundName As Boolean, foundNumber As Boolean, missing As String
+
+    Set ws = FindSheetAny(wb, SHEET_PARAMS)
+    If ws Is Nothing Then
+        AddIssueRow buffer, errLog, ctx, ERR_SHEET_MISSING, _
+            "Workbook '" & ctx.FileName & "' does not contain worksheet '" & SHEET_PARAMS & _
+            "' - Account Name and Account Number are blank", SHEET_PARAMS
+        Exit Sub
+    End If
+
+    ctx.AccountName = FindLabelValue(ws, LABEL_ACCOUNT_NAME, PARAM_LABEL_COL, PARAM_VALUE_COL, foundName)
+    ctx.AccountNumber = FindLabelValue(ws, LABEL_ACCOUNT_NUMBER, PARAM_LABEL_COL, PARAM_VALUE_COL, foundNumber)
+
+    If Not foundName Then
+        missing = AppendText(missing, "label '" & LABEL_ACCOUNT_NAME & "' not found in column " & PARAM_LABEL_COL)
+    ElseIf Len(ctx.AccountName) = 0 Then
+        missing = AppendText(missing, "Account Name is blank in column " & PARAM_VALUE_COL)
+    End If
+    If Not foundNumber Then
+        missing = AppendText(missing, "label '" & PrimaryName(LABEL_ACCOUNT_NUMBER) & "' not found in column " & PARAM_LABEL_COL)
+    ElseIf Len(ctx.AccountNumber) = 0 Then
+        missing = AppendText(missing, "Account Number is blank in column " & PARAM_VALUE_COL)
+    End If
+
+    If Len(missing) > 0 Then
+        AddIssueRow buffer, errLog, ctx, ERR_ACCOUNT_INFO, _
+            "Workbook '" & ctx.FileName & "', worksheet '" & ws.Name & "': " & missing, ws.Name
+    End If
+End Sub
+
+'---- One unreconciled sheet -> many output rows ------------------------------------------
+Private Sub ProcessSourceSheet(ByVal wb As Workbook, ByVal sheetAliases As String, _
+                               ByVal side As String, ByRef ctx As FileContext, _
+                               ByVal buffer As clsRowBuffer, ByVal errLog As clsErrorLog)
+    Dim ws As Worksheet, tbl As clsSheetTable, missingCols As String
+    Dim sheetLabel As String
+
+    Set ws = FindSheetAny(wb, sheetAliases)
+    If ws Is Nothing Then
+        AddIssueRow buffer, errLog, ctx, ERR_SHEET_MISSING, _
+            "Workbook '" & ctx.FileName & "' does not contain worksheet '" & PrimaryName(sheetAliases) & "'", _
+            PrimaryName(sheetAliases)
+        Exit Sub
+    End If
+    sheetLabel = ws.Name
+
+    Set tbl = New clsSheetTable
+    If Not tbl.Load(ws, HEADER_ROW) Then
+        AddIssueRow buffer, errLog, ctx, ERR_NO_HEADER, _
+            "Workbook '" & ctx.FileName & "', worksheet '" & sheetLabel & "' has no column headers in row " & HEADER_ROW, _
+            sheetLabel
+        Exit Sub
+    End If
+
+    missingCols = tbl.MissingColumns(RequiredHeaders)
+    If Len(missingCols) > 0 Then
+        AddIssueRow buffer, errLog, ctx, ERR_COLUMN_MISSING, _
+            "Workbook '" & ctx.FileName & "', worksheet '" & sheetLabel & "' is missing column(s) in row " & _
+            HEADER_ROW & ": " & missingCols, sheetLabel
+        Exit Sub
+    End If
+
+    If tbl.NonBlankRowCount = 0 Then
+        AddIssueRow buffer, errLog, ctx, ERR_NO_DATA, _
+            "Workbook '" & ctx.FileName & "', worksheet '" & sheetLabel & "' does not contain data (headers only)", _
+            sheetLabel
+        Exit Sub
+    End If
+
+    Dim colDate As Long, colAmt As Long, colDesc As Long, colCcy As Long, colStatus As Long
+    colDate = tbl.ColumnIndex(HDR_BANK_DATE)
+    colAmt = tbl.ColumnIndex(HDR_AMOUNT)
+    colDesc = tbl.ColumnIndex(HDR_DESCRIPTION)
+    colCcy = tbl.ColumnIndex(HDR_CURRENCY)
+    colStatus = tbl.ColumnIndex(HDR_STATUS)
+
+    Dim r As Long, row As Variant, amount As Variant, amountIssue As String
+    For r = 1 To tbl.RowCount
+        If Not tbl.IsBlankRow(r) Then
+            row = NewOutputRow(ctx, sheetLabel, tbl.SheetRow(r))
+            amount = tbl.GetValue(r, colAmt)
+
+            row(ocBankDate) = tbl.GetValue(r, colDate)
+            If side = SIDE_BANK Then row(ocAmountBank) = amount Else row(ocAmountSystem) = amount
+            row(ocCurrency) = tbl.GetValue(r, colCcy)
+            row(ocolDescription) = tbl.GetValue(r, colDesc)
+            row(ocolStatus) = tbl.GetValue(r, colStatus)
+
+            amountIssue = CheckAmount(amount)
+            If Len(amountIssue) > 0 Then
+                row(ocErrorMessage) = ERR_AMOUNT
+                row(ocComment) = "Transaction Amount " & amountIssue & " (" & sheetLabel & " row " & tbl.SheetRow(r) & ")"
+                row(ocCommentUpdatedOn) = Now
+                errLog.Add ctx.FileName, ERR_AMOUNT, row(ocComment), ctx.FullPath
+            End If
+
+            buffer.AddRow row
+            mItemRows = mItemRows + 1
+        End If
+    Next r
+End Sub
+
+Private Function RequiredHeaders() As Variant
+    RequiredHeaders = Array(HDR_BANK_DATE, HDR_AMOUNT, HDR_DESCRIPTION, HDR_CURRENCY, HDR_STATUS)
+End Function
+
+' "" when the amount is fine, otherwise a short reason.
+Private Function CheckAmount(ByVal amount As Variant) As String
+    If IsError(amount) Then
+        CheckAmount = "is an Excel error value"
+    ElseIf Len(Trim$(CStr(amount))) = 0 Then
+        CheckAmount = "is blank"
+    ElseIf Not IsNumeric(amount) Then
+        CheckAmount = "is not numeric ('" & CStr(amount) & "')"
+    End If
+End Function
+
+'---- Row builders ---------------------------------------------------------------------------
+Private Function NewOutputRow(ByRef ctx As FileContext, ByVal sheetLabel As String, _
+                              Optional ByVal sourceRow As Variant) As Variant
+    Dim row() As Variant
+    ReDim row(0 To ocLast)
+    row(ocAccountName) = ctx.AccountName
+    row(ocAccountNumber) = ctx.AccountNumber
+    row(ocFileName) = ctx.FileName
+    row(ocSourceSheet) = sheetLabel
+    If Not IsMissing(sourceRow) Then row(ocSourceRow) = sourceRow
+    NewOutputRow = row
+End Function
+
+' One output row describing a problem + one row in the Errors sheet.
+Private Sub AddIssueRow(ByVal buffer As clsRowBuffer, ByVal errLog As clsErrorLog, _
+                        ByRef ctx As FileContext, ByVal errorType As String, _
+                        ByVal comment As String, Optional ByVal sheetLabel As String = "")
+    Dim row As Variant
+    row = NewOutputRow(ctx, sheetLabel)
+    row(ocErrorMessage) = errorType
+    row(ocComment) = comment
+    row(ocCommentUpdatedOn) = Now
+    buffer.AddRow row
+    mIssueRows = mIssueRows + 1
+    errLog.Add ctx.FileName, errorType, comment, ctx.FullPath
+End Sub
+
+'---- Output -----------------------------------------------------------------------------------
+Private Function OutputHeaders() As Variant
+    If INCLUDE_TRACE_COLUMNS Then
+        OutputHeaders = Array("Account Name", "Account Number", "Bank Date", _
+            "Transaction Amount Bank", "Transaction Amount System", "Currency", _
+            "Transaction Description", "Status", "Error Message", "Comment", "Comment Updated on", _
+            "File Name", "Source Sheet", "Source Row")
+    Else
+        OutputHeaders = Array("Account Name", "Account Number", "Bank Date", _
+            "Transaction Amount Bank", "Transaction Amount System", "Currency", _
+            "Transaction Description", "Status", "Error Message", "Comment", "Comment Updated on")
+    End If
+End Function
+
+Private Function OutputFormats() As Variant
+    Const AMT As String = "#,##0.00;[Red]-#,##0.00"
+    OutputFormats = Array("", "@", "dd-mmm-yyyy", AMT, AMT, "", "", "", "", "", _
+                          "dd-mmm-yyyy hh:mm:ss", "", "", "0")
+End Function
+
+Private Sub WriteResults(ByVal buffer As clsRowBuffer, ByVal errLog As clsErrorLog)
+    If buffer.Count > MAX_EXCEL_ROWS Then
+        errLog.Add "(run)", ERR_FATAL, buffer.Count & " rows collected but a worksheet holds only " & _
+            MAX_EXCEL_ROWS & "; the remaining rows were not written"
+    End If
+
+    WriteTable GetOrCreateSheet(ThisWorkbook, OUTPUT_SHEET), OutputHeaders, _
+               buffer.ToArray(MAX_EXCEL_ROWS), OutputFormats
+    errLog.WriteToSheet GetOrCreateSheet(ThisWorkbook, ERRORS_SHEET)
+    ThisWorkbook.Worksheets(OUTPUT_SHEET).Activate
+End Sub
+
+Private Sub ShowSummary(ByVal fileCount As Long, ByVal buffer As clsRowBuffer, _
+                        ByVal errLog As clsErrorLog, ByVal elapsedSeconds As Double)
+    MsgBox "Processed " & fileCount & " files in " & FormatDuration(elapsedSeconds) & vbCrLf & vbCrLf & _
+           "Rows written to '" & OUTPUT_SHEET & "': " & buffer.Count & vbCrLf & _
+           "   Open items:  " & mItemRows & vbCrLf & _
+           "   Issue rows:  " & mIssueRows & vbCrLf & vbCrLf & _
+           "Issues logged: " & errLog.Count & " in " & errLog.FileCount & " files" & vbCrLf & _
+           "(filter 'Error Message' or see '" & ERRORS_SHEET & "')", _
+           vbInformation, "Open items consolidation complete"
+End Sub
+
+
+_______________________________________________________________
+
+
+modFileUtils.bas
+
+Option Explicit
+
+'==============================================================================
+' modFileUtils  (REUSABLE)
+' Folder picking, file listing and path helpers. No business logic here.
+'==============================================================================
+
+Public Const EXCEL_EXTENSIONS As String = "xlsx,xlsm,xls,xlsb"
+
+'------------------------------------------------------------------------------
+' Shows a folder picker. Returns the path with a trailing "\" or "" if cancelled.
+'------------------------------------------------------------------------------
+Public Function PickFolder(Optional ByVal dialogTitle As String = "Select a folder") As String
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = dialogTitle
+        .AllowMultiSelect = False
+        If .Show = -1 Then PickFolder = AddTrailingSlash(.SelectedItems(1))
+    End With
+End Function
+
+'------------------------------------------------------------------------------
+' Returns a Collection of full file paths in a folder.
+'   extensions        : comma-separated list without dots, e.g. "xlsx,xlsm"
+'                       ("" or "*" = all files)
+'   includeSubfolders : scan subfolders recursively
+'   excludePath       : one full path to skip (e.g. ThisWorkbook.FullName)
+' Office lock/temp files ("~$...") are always skipped.
+'------------------------------------------------------------------------------
+Public Function GetFiles(ByVal folderPath As String, _
+                         Optional ByVal extensions As String = EXCEL_EXTENSIONS, _
+                         Optional ByVal includeSubfolders As Boolean = False, _
+                         Optional ByVal excludePath As String = "") As Collection
+    Dim files As Collection
+    Set files = New Collection
+
+    If Not FolderExists(folderPath) Then
+        Set GetFiles = files
+        Exit Function
+    End If
+
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    CollectFilesRecursive fso, AddTrailingSlash(folderPath), NormaliseExtList(extensions), _
+                          includeSubfolders, excludePath, files
+    Set GetFiles = files
+End Function
+
+Private Sub CollectFilesRecursive(ByVal fso As Object, ByVal folderPath As String, _
+                                  ByVal extList As String, ByVal includeSubfolders As Boolean, _
+                                  ByVal excludePath As String, ByRef files As Collection)
+    Dim fld As Object, f As Object, subFld As Object
+    Set fld = fso.GetFolder(folderPath)
+
+    For Each f In fld.Files
+        If IsWantedFile(fso, f, extList, excludePath) Then files.Add f.Path
+    Next f
+
+    If includeSubfolders Then
+        For Each subFld In fld.SubFolders
+            CollectFilesRecursive fso, subFld.Path, extList, True, excludePath, files
+        Next subFld
+    End If
+End Sub
+
+Private Function IsWantedFile(ByVal fso As Object, ByVal f As Object, _
+                              ByVal extList As String, ByVal excludePath As String) As Boolean
+    If Left$(f.Name, 2) = "~$" Then Exit Function
+    If Len(excludePath) > 0 Then
+        If StrComp(f.Path, excludePath, vbTextCompare) = 0 Then Exit Function
+    End If
+    If Len(extList) = 0 Then
+        IsWantedFile = True
+    Else
+        IsWantedFile = InStr(1, extList, "," & LCase$(fso.GetExtensionName(f.Name)) & ",", vbTextCompare) > 0
+    End If
+End Function
+
+' "xlsx, .XLSM" -> ",xlsx,xlsm,"   ("" or "*" -> "")
+Private Function NormaliseExtList(ByVal extensions As String) As String
+    Dim s As String
+    s = LCase$(Replace(Replace(extensions, " ", ""), ".", ""))
+    If s = "" Or s = "*" Then Exit Function
+    NormaliseExtList = "," & s & ","
+End Function
+
+'---- Path helpers ------------------------------------------------------------
+Public Function FolderExists(ByVal folderPath As String) As Boolean
+    If Len(folderPath) = 0 Then Exit Function
+    FolderExists = CreateObject("Scripting.FileSystemObject").FolderExists(folderPath)
+End Function
+
+Public Function AddTrailingSlash(ByVal folderPath As String) As String
+    If Right$(folderPath, 1) = "\" Then
+        AddTrailingSlash = folderPath
+    Else
+        AddTrailingSlash = folderPath & "\"
+    End If
+End Function
+
+' "C:\Data\File.xlsx" -> "File.xlsx"
+Public Function GetFileName(ByVal fullPath As String) As String
+    GetFileName = Mid$(fullPath, InStrRev(fullPath, "\") + 1)
+End Function
+
+' "C:\Data\File.xlsx" -> "C:\Data\"
+Public Function GetFolderPath(ByVal fullPath As String) As String
+    GetFolderPath = Left$(fullPath, InStrRev(fullPath, "\"))
+End Function
+
+
+
+_______________________________________________
+
+modExcelUtil.bas
+
+Option Explicit
+
+'==============================================================================
+' modExcelUtils  (REUSABLE)
+' Safe workbook open/close, sheet lookup, cell reading and table output.
+' Depends on: clsCellResult, modStringUtils
+'==============================================================================
+
+' Passing a dummy password makes password-protected files raise an error
+' instead of showing a password prompt. Unprotected files ignore it.
+Private Const DUMMY_PWD As String = "~~no_pwd~~"
+
+'---- Workbooks ---------------------------------------------------------------
+
+' Opens a workbook without prompts. Returns Nothing on failure and fills errMsg.
+Public Function OpenWorkbookSafe(ByVal fullPath As String, ByRef errMsg As String, _
+                                 Optional ByVal openReadOnly As Boolean = True) As Workbook
+    errMsg = vbNullString
+    On Error Resume Next
+    Set OpenWorkbookSafe = Workbooks.Open(Filename:=fullPath, UpdateLinks:=0, _
+                                          ReadOnly:=openReadOnly, Password:=DUMMY_PWD, _
+                                          IgnoreReadOnlyRecommended:=True, _
+                                          Notify:=False, AddToMru:=False)
+    If Err.Number <> 0 Then
+        errMsg = Err.Description
+        Set OpenWorkbookSafe = Nothing
+    End If
+    On Error GoTo 0
+End Function
+
+' Closes a workbook and never raises an error.
+Public Sub CloseWorkbookSafe(ByRef wb As Workbook, Optional ByVal saveChanges As Boolean = False)
+    If wb Is Nothing Then Exit Sub
+    On Error Resume Next
+    wb.Close saveChanges:=saveChanges
+    On Error GoTo 0
+    Set wb = Nothing
+End Sub
+
+'---- Sheets ------------------------------------------------------------------
+
+' Finds a sheet ignoring case and leading/trailing spaces. Returns Nothing if absent.
+Public Function FindSheet(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If StrComp(Trim$(ws.Name), Trim$(sheetName), vbTextCompare) = 0 Then
+            Set FindSheet = ws
+            Exit Function
+        End If
+    Next ws
+End Function
+
+Public Function SheetExists(ByVal wb As Workbook, ByVal sheetName As String) As Boolean
+    SheetExists = Not FindSheet(wb, sheetName) Is Nothing
+End Function
+
+' Finds a sheet by any of several "|"-separated names, ignoring case, spaces,
+' underscores and hyphens.  FindSheetAny(wb, "Unrec_System_Dr|Unrec_Stem_Dr")
+Public Function FindSheetAny(ByVal wb As Workbook, ByVal sheetAliases As String) As Worksheet
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If MatchesAny(ws.Name, sheetAliases) Then
+            Set FindSheetAny = ws
+            Exit Function
+        End If
+    Next ws
+End Function
+
+'---- Ranges ------------------------------------------------------------------
+
+' Last row holding any value or formula on the sheet (0 if the sheet is empty).
+' Ignores formatting-only cells, unlike UsedRange.
+Public Function LastValueRow(ByVal ws As Worksheet) As Long
+    Dim c As Range
+    Set c = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), LookIn:=xlFormulas, _
+                          LookAt:=xlPart, SearchOrder:=xlByRows, _
+                          SearchDirection:=xlPrevious, MatchCase:=False)
+    If Not c Is Nothing Then LastValueRow = c.Row
+End Function
+
+' Range.Value always as a 1-based 2-D array (a single cell is not an array in VBA).
+Public Function RangeTo2DArray(ByVal rng As Range) As Variant
+    Dim arr() As Variant
+    If rng.Cells.CountLarge = 1 Then
+        ReDim arr(1 To 1, 1 To 1)
+        arr(1, 1) = rng.Value
+        RangeTo2DArray = arr
+    Else
+        RangeTo2DArray = rng.Value
+    End If
+End Function
+
+' Looks for a label in one column and returns the displayed text next to it.
+'   FindLabelValue(ws, "Account Number|Account No", "B", "C", found)
+' Label match ignores case, spaces, "_", "." and ":". found = False if absent.
+Public Function FindLabelValue(ByVal ws As Worksheet, ByVal labelAliases As String, _
+                               ByVal labelColumn As String, ByVal valueColumn As String, _
+                               ByRef found As Boolean) As String
+    Dim lastRow As Long, arr As Variant, r As Long
+    found = False
+    lastRow = ws.Cells(ws.Rows.Count, labelColumn).End(xlUp).Row
+    arr = RangeTo2DArray(ws.Range(ws.Cells(1, labelColumn), ws.Cells(lastRow, labelColumn)))
+
+    For r = 1 To UBound(arr, 1)
+        If Not IsError(arr(r, 1)) Then
+            If MatchesAny(CStr(arr(r, 1)), labelAliases) Then
+                found = True
+                FindLabelValue = Trim$(DisplayedText(ws.Cells(r, valueColumn)))
+                Exit Function
+            End If
+        End If
+    Next r
+End Function
+
+Public Function GetOrCreateSheet(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet
+    Dim ws As Worksheet
+    Set ws = FindSheet(wb, sheetName)
+    If ws Is Nothing Then
+        Set ws = wb.Worksheets.Add(After:=wb.Sheets(wb.Sheets.Count))
+        ws.Name = sheetName
+    End If
+    Set GetOrCreateSheet = ws
+End Function
+
+'---- Cells -------------------------------------------------------------------
+
+' Reads one cell and reports what happened (sheet missing, blank, #error).
+'   asDisplayedText = True returns the cell text as shown (keeps leading zeros)
+Public Function ReadCell(ByVal wb As Workbook, ByVal sheetName As String, _
+                         ByVal cellAddress As String, _
+                         Optional ByVal asDisplayedText As Boolean = False) As clsCellResult
+    Dim res As clsCellResult
+    Set res = New clsCellResult
+    res.Location = sheetName & "!" & cellAddress
+
+    Dim ws As Worksheet
+    Set ws = FindSheet(wb, sheetName)
+    If ws Is Nothing Then
+        res.Message = "Worksheet '" & sheetName & "' is not present in the file"
+        Set ReadCell = res
+        Exit Function
+    End If
+    res.SheetFound = True
+
+    Dim c As Range
+    Set c = ws.Range(cellAddress)
+
+    If IsError(c.Value) Then
+        res.IsErrorValue = True
+        res.Value = c.Text
+        res.Message = res.Location & " contains " & c.Text
+    ElseIf IsEmpty(c.Value) Then
+        res.IsBlank = True
+        res.Message = res.Location & " is blank"
+    ElseIf asDisplayedText Then
+        res.Value = DisplayedText(c)
+    Else
+        res.Value = c.Value
+    End If
+
+    Set ReadCell = res
+End Function
+
+' Cell text as displayed; falls back to the raw value if the column shows "####".
+Public Function DisplayedText(ByVal c As Range) As String
+    Dim t As String
+    t = c.Text
+    If Len(t) = 0 Or InStr(t, "#") > 0 Then t = CStr(c.Value)
+    DisplayedText = t
+End Function
+
+'---- Output ------------------------------------------------------------------
+
+' Clears the sheet and writes headers + a 2-D data array in one shot.
+'   columnFormats : optional Array() of number formats, one per column
+'                   ("" = leave as General). Applied BEFORE writing, so "@"
+'                   keeps values like leading-zero codes as text.
+Public Sub WriteTable(ByVal ws As Worksheet, ByVal headers As Variant, ByRef data As Variant, _
+                      Optional ByVal columnFormats As Variant, _
+                      Optional ByVal maxColumnWidth As Double = 70)
+    Dim colCount As Long, rowCount As Long, c As Long
+    colCount = UBound(headers) - LBound(headers) + 1
+    rowCount = 0
+    If IsArray(data) Then rowCount = UBound(data, 1) - LBound(data, 1) + 1
+
+    ws.Cells.Clear
+    If ws.AutoFilterMode Then ws.AutoFilterMode = False
+
+    ws.Range("A1").Resize(1, colCount).Value = headers
+    StyleHeaderRow ws.Range("A1").Resize(1, colCount)
+
+    If rowCount > 0 Then
+        If Not IsMissing(columnFormats) Then
+            For c = 0 To colCount - 1
+                If c <= UBound(columnFormats) - LBound(columnFormats) Then
+                    If Len(columnFormats(LBound(columnFormats) + c)) > 0 Then
+                        ws.Cells(2, c + 1).Resize(rowCount, 1).NumberFormat = columnFormats(LBound(columnFormats) + c)
+                    End If
+                End If
+            Next c
+        End If
+        ws.Range("A2").Resize(rowCount, colCount).Value = data
+    End If
+
+    If rowCount > 0 Then ws.Range("A1").Resize(rowCount + 1, colCount).AutoFilter
+    ws.Range("A1").Resize(1, colCount).EntireColumn.AutoFit
+    For c = 1 To colCount
+        If ws.Columns(c).ColumnWidth > maxColumnWidth Then ws.Columns(c).ColumnWidth = maxColumnWidth
+    Next c
+    FreezeTopRow ws
+End Sub
+
+Public Sub StyleHeaderRow(ByVal headerRange As Range)
+    With headerRange
+        .Font.Bold = True
+        .Font.Color = vbWhite
+        .Interior.Color = RGB(31, 78, 121)
+    End With
+End Sub
+
+Public Sub FreezeTopRow(ByVal ws As Worksheet)
+    ws.Activate
+    With ActiveWindow
+        .FreezePanes = False
+        .SplitColumn = 0
+        .SplitRow = 1
+        .FreezePanes = True
+    End With
+End Sub
+
+
+
+_____________________________________________
+
+clsSheetTable.cls
+
+
+Option Explicit
+
+'==============================================================================
+' clsSheetTable  (REUSABLE)
+' Loads a table (header row + data below) from a worksheet into memory in one
+' read, and lets you find columns BY HEADER NAME - so column order in the
+' source files does not matter.
+' Depends on: modExcelUtils (LastValueRow, RangeTo2DArray), modStringUtils
+'
+' Usage:
+'   Set t = New clsSheetTable
+'   If t.Load(ws, 5) Then
+'       colAmt = t.ColumnIndex("Transaction Amount|Amount")
+'       For r = 1 To t.RowCount
+'           If Not t.IsBlankRow(r) Then Debug.Print t.GetValue(r, colAmt)
+'       Next r
+'   End If
+'==============================================================================
+
+Private mSheetName As String
+Private mHeaderRow As Long
+Private mColCount As Long
+Private mRowCount As Long
+Private mData As Variant          ' 1-based (rows, cols), data rows only
+Private mHeaders As Object        ' normalised header -> column number
+
+' Reads the header row and all rows below it up to the last row with values.
+' Returns False when the header row is completely empty.
+Public Function Load(ByVal ws As Worksheet, ByVal headerRow As Long) As Boolean
+    Dim hdr As Variant, c As Long, key As String, lastRow As Long
+
+    mSheetName = ws.Name
+    mHeaderRow = headerRow
+    mRowCount = 0
+    mData = Empty
+    Set mHeaders = CreateObject("Scripting.Dictionary")
+
+    mColCount = ws.Cells(headerRow, ws.Columns.Count).End(xlToLeft).Column
+    If mColCount = 1 And Len(Trim$(CStr(ws.Cells(headerRow, 1).Text))) = 0 Then
+        mColCount = 0
+        Exit Function
+    End If
+
+    hdr = RangeTo2DArray(ws.Cells(headerRow, 1).Resize(1, mColCount))
+    For c = 1 To mColCount
+        If Not IsError(hdr(1, c)) Then
+            key = NormaliseKey(CStr(hdr(1, c)))
+            If Len(key) > 0 Then
+                If Not mHeaders.Exists(key) Then mHeaders.Add key, c   ' first one wins
+            End If
+        End If
+    Next c
+    If mHeaders.Count = 0 Then Exit Function
+
+    lastRow = LastValueRow(ws)
+    If lastRow > headerRow Then
+        mRowCount = lastRow - headerRow
+        mData = RangeTo2DArray(ws.Cells(headerRow + 1, 1).Resize(mRowCount, mColCount))
+    End If
+
+    Load = True
+End Function
+
+' Column number for a header ("|"-separated aliases allowed); 0 if not found.
+Public Function ColumnIndex(ByVal headerAliases As String) As Long
+    Dim a As Variant, key As String
+    If mHeaders Is Nothing Then Exit Function
+    For Each a In Split(headerAliases, "|")
+        key = NormaliseKey(CStr(a))
+        If mHeaders.Exists(key) Then
+            ColumnIndex = mHeaders(key)
+            Exit Function
+        End If
+    Next a
+End Function
+
+' Returns "" when all headers exist, otherwise "Header A, Header B".
+'   requiredHeaders : Array("Bank Date", "Transaction Amount|Amount", ...)
+Public Function MissingColumns(ByVal requiredHeaders As Variant) As String
+    Dim h As Variant, result As String
+    For Each h In requiredHeaders
+        If ColumnIndex(CStr(h)) = 0 Then result = AppendText(result, PrimaryName(CStr(h)), ", ")
+    Next h
+    MissingColumns = result
+End Function
+
+' Value at data row r (1 = first row under the header) and column c.
+' Returns Empty for c = 0, so optional columns can be read safely.
+Public Function GetValue(ByVal r As Long, ByVal c As Long) As Variant
+    If c < 1 Or c > mColCount Or r < 1 Or r > mRowCount Then Exit Function
+    GetValue = mData(r, c)
+End Function
+
+' True when every cell in data row r is empty or only spaces.
+Public Function IsBlankRow(ByVal r As Long) As Boolean
+    Dim c As Long, v As Variant
+    For c = 1 To mColCount
+        v = mData(r, c)
+        If IsError(v) Then Exit Function
+        If Len(Trim$(CStr(v))) > 0 Then Exit Function
+    Next c
+    IsBlankRow = True
+End Function
+
+' Number of rows that are not blank.
+Public Function NonBlankRowCount() As Long
+    Dim r As Long
+    For r = 1 To mRowCount
+        If Not IsBlankRow(r) Then NonBlankRowCount = NonBlankRowCount + 1
+    Next r
+End Function
+
+' Worksheet row number of data row r (useful for error messages).
+Public Function SheetRow(ByVal r As Long) As Long
+    SheetRow = mHeaderRow + r
+End Function
+
+Public Property Get RowCount() As Long
+    RowCount = mRowCount
+End Property
+
+Public Property Get ColCount() As Long
+    ColCount = mColCount
+End Property
+
+Public Property Get SheetName() As String
+    SheetName = mSheetName
+End Property
+
+
+
+___________________________________________
+
+clsRowBuffer.cls
+
+
+Option Explicit
+
+'==============================================================================
+' clsRowBuffer  (REUSABLE)
+' Fast, growable 2-D array for collecting output rows when you don't know
+' the final row count. Write the result to a sheet in one go with ToArray.
+'
+' Usage:
+'   Set buf = New clsRowBuffer
+'   buf.Init 5
+'   buf.AddRow Array("a", 1, Date, "", 2.5)
+'   ws.Range("A2").Resize(buf.Count, 5).Value = buf.ToArray
+'==============================================================================
+
+Private mData() As Variant      ' stored (cols, rows) so ReDim Preserve can grow rows
+Private mCols As Long
+Private mCount As Long
+Private mCapacity As Long
+
+Public Sub Init(ByVal columnCount As Long, Optional ByVal initialCapacity As Long = 1000)
+    If columnCount < 1 Then Err.Raise vbObjectError + 513, "clsRowBuffer", "columnCount must be >= 1"
+    mCols = columnCount
+    mCount = 0
+    mCapacity = IIf(initialCapacity < 1, 1, initialCapacity)
+    ReDim mData(1 To mCols, 1 To mCapacity)
+End Sub
+
+' Adds one row from a 1-D array. Extra values beyond the column count are
+' ignored; missing ones stay Empty.
+Public Sub AddRow(ByVal rowValues As Variant)
+    If mCols = 0 Then Err.Raise vbObjectError + 514, "clsRowBuffer", "Call Init before AddRow"
+
+    If mCount = mCapacity Then
+        mCapacity = mCapacity * 2
+        ReDim Preserve mData(1 To mCols, 1 To mCapacity)
+    End If
+    mCount = mCount + 1
+
+    Dim c As Long, lb As Long, n As Long
+    lb = LBound(rowValues)
+    n = UBound(rowValues) - lb + 1
+    If n > mCols Then n = mCols
+    For c = 1 To n
+        mData(c, mCount) = rowValues(lb + c - 1)
+    Next c
+End Sub
+
+Public Property Get Count() As Long
+    Count = mCount
+End Property
+
+Public Property Get ColumnCount() As Long
+    ColumnCount = mCols
+End Property
+
+' Returns a (rows, cols) 1-based array ready for Range.Value, or Empty if no rows.
+'   maxRows > 0 limits the rows returned (e.g. Excel's 1,048,575 data-row limit).
+Public Function ToArray(Optional ByVal maxRows As Long = 0) As Variant
+    Dim n As Long, r As Long, c As Long, out() As Variant
+    n = mCount
+    If maxRows > 0 And n > maxRows Then n = maxRows
+    If n = 0 Then Exit Function
+
+    ReDim out(1 To n, 1 To mCols)
+    For r = 1 To n
+        For c = 1 To mCols
+            out(r, c) = mData(c, r)
+        Next c
+    Next r
+    ToArray = out
+End Function
+
+
+__________________________________________________
+
+clsReconRecords.cls
+
+
+Option Explicit
+
+'==============================================================================
+' clsReconRecord  (RECON-SPECIFIC)
+' One output row: FileName | Variance | glAccountNumber | Status |
+'                 Error message | Updatedtime
+' Depends on: modStringUtils.AppendText
+'==============================================================================
+
+Public FileName As String
+Public Variance As Variant
+Public GLAccountNumber As Variant
+Public Status As String
+Public ErrorMessage As String
+Public UpdatedTime As Date
+
+' Adds a message to ErrorMessage ("; "-separated). Blank messages are ignored.
+Public Sub AddError(ByVal message As String)
+    ErrorMessage = AppendText(ErrorMessage, message)
+End Sub
+
+' Column order must match modReconConsolidator.OutputHeaders.
+Public Function ToRow() As Variant
+    ToRow = Array(FileName, Variance, GLAccountNumber, Status, ErrorMessage, UpdatedTime)
+End Function
+
+
+____________________________________________________
+
+clsProgress.cls
+
+Option Explicit
+
+'==============================================================================
+' clsProgress  (REUSABLE)
+' Status-bar progress with elapsed time and ETA for long loops.
+' Depends on: modStringUtils.FormatDuration
+'
+' Usage:
+'   Set prog = New clsProgress
+'   prog.Start files.Count, "Processing files"
+'   For i = 1 To n: ...: prog.Tick i: Next
+'   prog.Finish
+'==============================================================================
+
+Private mTotal As Long
+Private mPrefix As String
+Private mUpdateEvery As Long
+Private mStartTime As Double
+Private mElapsed As Double
+Private mRunning As Boolean
+
+Public Sub Start(ByVal total As Long, Optional ByVal prefix As String = "Processing", _
+                 Optional ByVal updateEvery As Long = 5)
+    mTotal = total
+    mPrefix = prefix
+    mUpdateEvery = IIf(updateEvery < 1, 1, updateEvery)
+    mStartTime = Timer
+    mElapsed = 0
+    mRunning = True
+    Application.StatusBar = mPrefix & ": starting " & mTotal & " items..."
+End Sub
+
+Public Sub Tick(ByVal current As Long)
+    If Not mRunning Then Exit Sub
+    If current Mod mUpdateEvery <> 0 And current <> mTotal Then Exit Sub
+
+    Dim elapsed As Double, remaining As Double
+    elapsed = SecondsSinceStart()
+    If current > 0 Then remaining = elapsed / current * (mTotal - current)
+
+    Application.StatusBar = mPrefix & ": " & current & " of " & mTotal & _
+        " (" & Format(current / mTotal, "0%") & ")  |  elapsed " & FormatDuration(elapsed) & _
+        "  |  about " & FormatDuration(remaining) & " left"
+    DoEvents
+End Sub
+
+Public Sub Finish()
+    If Not mRunning Then Exit Sub
+    mElapsed = SecondsSinceStart()
+    mRunning = False
+    Application.StatusBar = False
+End Sub
+
+Public Property Get ElapsedSeconds() As Double
+    If mRunning Then ElapsedSeconds = SecondsSinceStart() Else ElapsedSeconds = mElapsed
+End Property
+
+' Timer resets at midnight; correct for runs that cross it.
+Private Function SecondsSinceStart() As Double
+    SecondsSinceStart = Timer - mStartTime
+    If SecondsSinceStart < 0 Then SecondsSinceStart = SecondsSinceStart + 86400
+End Function
+
+Private Sub Class_Terminate()
+    If mRunning Then Application.StatusBar = False
+End Sub
+
+
+
+_____________________________________________
+
+clsErrorLog.cls
+
+
+Option Explicit
+
+'==============================================================================
+' clsErrorLog  (REUSABLE)
+' Collects errors during a batch run (one row per error) and writes them to a
+' worksheet at the end:  FileName | FilePath | ErrorType | ErrorMessage | LoggedTime
+' Depends on: modExcelUtils.WriteTable
+'
+' Usage:
+'   Set errLog = New clsErrorLog
+'   errLog.Add "File1.xlsx", "Sheet missing", "Worksheet 'X' is not present", fullPath
+'   errLog.WriteToSheet GetOrCreateSheet(ThisWorkbook, "Errors")
+'==============================================================================
+
+Private mRows As Collection
+Private mFiles As Object        ' distinct file names that have at least one error
+
+Private Sub Class_Initialize()
+    Clear
+End Sub
+
+Public Sub Clear()
+    Set mRows = New Collection
+    Set mFiles = CreateObject("Scripting.Dictionary")
+    mFiles.CompareMode = vbTextCompare
+End Sub
+
+Public Sub Add(ByVal fileName As String, ByVal errorType As String, _
+               ByVal message As String, Optional ByVal filePath As String = "")
+    mRows.Add Array(fileName, filePath, errorType, message, Now)
+    If Not mFiles.Exists(fileName) Then mFiles.Add fileName, True
+End Sub
+
+' Total error rows logged
+Public Property Get Count() As Long
+    Count = mRows.Count
+End Property
+
+' Number of distinct files with at least one error
+Public Property Get FileCount() As Long
+    FileCount = mFiles.Count
+End Property
+
+Public Function Headers() As Variant
+    Headers = Array("FileName", "FilePath", "ErrorType", "ErrorMessage", "LoggedTime")
+End Function
+
+Public Function Formats() As Variant
+    Formats = Array("", "", "", "", "dd-mmm-yyyy hh:mm:ss")
+End Function
+
+' 2-D array (1-based) of all rows, or Empty when nothing was logged.
+Public Function ToArray() As Variant
+    If mRows.Count = 0 Then Exit Function
+
+    Dim data() As Variant, r As Long, c As Long, row As Variant, colCount As Long
+    colCount = UBound(Headers) + 1
+    ReDim data(1 To mRows.Count, 1 To colCount)
+    For Each row In mRows
+        r = r + 1
+        For c = 0 To colCount - 1
+            data(r, c + 1) = row(c)
+        Next c
+    Next row
+    ToArray = data
+End Function
+
+' Clears the sheet and writes the log. With no errors, writes headers plus a note.
+Public Sub WriteToSheet(ByVal ws As Worksheet)
+    WriteTable ws, Headers, ToArray, Formats
+    If mRows.Count = 0 Then ws.Range("A2").Value = "No errors"
+End Sub
+________________________________________________________________
+
+
+clsCellResult.cls
+
+Option Explicit
+
+'==============================================================================
+' clsCellResult  (REUSABLE)
+' The outcome of reading one cell via modExcelUtils.ReadCell.
+'==============================================================================
+
+Public Value As Variant         ' value read (Empty if sheet missing or blank)
+Public Location As String       ' e.g. "Recon_Parameters!D25"
+Public SheetFound As Boolean
+Public IsBlank As Boolean
+Public IsErrorValue As Boolean  ' cell holds #N/A, #REF! etc.
+Public Message As String        ' "" when everything is fine
+
+' True when the sheet exists and the cell holds a usable value.
+Public Property Get IsOk() As Boolean
+    IsOk = SheetFound And Not IsBlank And Not IsErrorValue
+End Property
+
+
+____________________________________________________
+
+clsAppState.cls
+
+
+Option Explicit
+
+'==============================================================================
+' clsAppState  (REUSABLE)
+' Saves Excel application settings, switches to "fast mode" for bulk work,
+' and restores everything afterwards - even if the macro stops on an error,
+' because Class_Terminate calls Restore when the object goes out of scope.
+'
+' Usage:
+'   Dim app As clsAppState
+'   Set app = New clsAppState
+'   app.EnterFastMode
+'   ... bulk work ...
+'   app.Restore
+'==============================================================================
+
+Private mActive As Boolean
+Private mScreenUpdating As Boolean
+Private mEnableEvents As Boolean
+Private mDisplayAlerts As Boolean
+Private mAskToUpdateLinks As Boolean
+Private mCalculation As XlCalculation
+Private mAutomationSecurity As MsoAutomationSecurity
+
+Public Property Get IsActive() As Boolean
+    IsActive = mActive
+End Property
+
+' disableMacrosInOpenedFiles = True stops Workbook_Open etc. in files you open.
+Public Sub EnterFastMode(Optional ByVal disableMacrosInOpenedFiles As Boolean = True)
+    If mActive Then Exit Sub
+
+    With Application
+        mScreenUpdating = .ScreenUpdating
+        mEnableEvents = .EnableEvents
+        mDisplayAlerts = .DisplayAlerts
+        mAskToUpdateLinks = .AskToUpdateLinks
+        mAutomationSecurity = .AutomationSecurity
+        On Error Resume Next            ' Calculation can fail if no workbook is open
+        mCalculation = .Calculation
+        On Error GoTo 0
+
+        .ScreenUpdating = False
+        .EnableEvents = False
+        .DisplayAlerts = False
+        .AskToUpdateLinks = False
+        On Error Resume Next
+        .Calculation = xlCalculationManual
+        On Error GoTo 0
+        If disableMacrosInOpenedFiles Then .AutomationSecurity = msoAutomationSecurityForceDisable
+    End With
+
+    mActive = True
+End Sub
+
+Public Sub Restore()
+    If Not mActive Then Exit Sub
+    On Error Resume Next
+    With Application
+        .AutomationSecurity = mAutomationSecurity
+        .Calculation = mCalculation
+        .AskToUpdateLinks = mAskToUpdateLinks
+        .DisplayAlerts = mDisplayAlerts
+        .EnableEvents = mEnableEvents
+        .ScreenUpdating = mScreenUpdating
+        .StatusBar = False
+    End With
+    On Error GoTo 0
+    mActive = False
+End Sub
+
+Private Sub Class_Terminate()
+    Restore
+End Sub
+
+
+________________________________________________
